@@ -1,0 +1,570 @@
+{
+  "contract_version": "v1.2",
+  "home_id": "home_imphal_001",
+  "generated_for": "Phase 1 MVP (PWR-01, PWR-02, PWR-03, WAT-01, VEH-01, HUB-01)",
+  "modules": {
+    "PWR-01": {
+      "device_id": "dd_pwr01_a1b2c3",
+      "room_id": "room_living",
+      "name": "Living Room Switchboard",
+      "local_pin": "48291034",
+      "topics": {
+        "info": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/info",
+        "state": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/state",
+        "cmd": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/cmd",
+        "telemetry": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/telemetry",
+        "alert": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/alert",
+        "status": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/status",
+        "config": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/config",
+        "rules": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/rules",
+        "ota": "ddoodle/home_imphal_001/dd_pwr01_a1b2c3/ota"
+      },
+      "info": {
+        "schema": "v1.2",
+        "device_id": "dd_pwr01_a1b2c3",
+        "module_code": "PWR-01",
+        "fw_version": "1.2.0",
+        "hw_rev": "A1",
+        "operation_mode": "CLOUD_DIRECT",
+        "capabilities": [
+          { "key": "ch1", "type": "switch", "label": "Ceiling LED" },
+          { "key": "ch2", "type": "switch", "label": "Cove Strip" },
+          { "key": "ch3", "type": "switch", "label": "Porch Light" },
+          { "key": "ch4", "type": "switch", "label": "TV Socket" },
+          { "key": "fan_speed", "type": "level", "min": 0, "max": 4, "step": 1, "label": "Ceiling Fan" }
+        ]
+      },
+      "state": {
+        "ts": 1763685000,
+        "operation_mode": "CLOUD_DIRECT",
+        "rssi": -58,
+        "ack": "uuid-pwr01-1001",
+        "state": {
+          "ch1": true,
+          "ch2": false,
+          "ch3": true,
+          "ch4": true,
+          "fan_speed": 3
+        }
+      },
+      "cmd": {
+        "req_id": "uuid-pwr01-1001",
+        "source": "pwa_cloud",
+        "set": {
+          "ch1": true,
+          "fan_speed": 3
+        }
+      },
+      "telemetry": {
+        "ts": 1763685005,
+        "watts": 112.4,
+        "voltage_v": 231.2,
+        "current_a": 0.49,
+        "kwh_today": 1.42,
+        "kwh_total": 184.6
+      },
+      "config": {
+        "schema": "v1.2",
+        "operation_mode": "CLOUD_DIRECT",
+        "power_restore": "RESTORE_LAST",
+        "guardrails": {
+          "hard_locked": false,
+          "min_voltage_v": 165,
+          "max_voltage_v": 275
+        }
+      },
+      "rules": {
+        "schema": "v1.2",
+        "rules": [
+          {
+            "id": "sch_porch_on",
+            "enabled": true,
+            "type": "schedule",
+            "cron": "30 17 * * *",
+            "action": { "ch3": true }
+          },
+          {
+            "id": "sch_porch_off",
+            "enabled": true,
+            "type": "schedule",
+            "cron": "0 6 * * *",
+            "action": { "ch3": false }
+          }
+        ]
+      },
+      "ota": {
+        "url": "https://firebasestorage.googleapis.com/v0/b/ddoodle/o/firmware%2FPWR-01_v1.2.0.bin",
+        "fw_version": "1.2.0",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 412352,
+        "sig": "secure-boot-v2"
+      },
+      "status": "online"
+    },
+    "PWR-02": {
+      "device_id": "dd_pwr02_d4e5f6",
+      "room_id": "room_bedroom",
+      "name": "Master Bedroom Dimmer & Meter",
+      "local_pin": "73910482",
+      "topics": {
+        "info": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/info",
+        "state": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/state",
+        "cmd": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/cmd",
+        "telemetry": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/telemetry",
+        "alert": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/alert",
+        "status": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/status",
+        "config": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/config",
+        "rules": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/rules",
+        "ota": "ddoodle/home_imphal_001/dd_pwr02_d4e5f6/ota"
+      },
+      "info": {
+        "schema": "v1.2",
+        "device_id": "dd_pwr02_d4e5f6",
+        "module_code": "PWR-02",
+        "fw_version": "1.2.0",
+        "hw_rev": "A1",
+        "operation_mode": "CLOUD_DIRECT",
+        "capabilities": [
+          { "key": "ch1", "type": "switch", "label": "Warm Lamp" },
+          { "key": "dimmer_pct", "type": "level", "min": 0, "max": 100, "step": 1, "label": "Brightness", "unit": "%" },
+          { "key": "watts", "type": "power_meter", "label": "Live Load", "unit": "W" },
+          { "key": "voltage_v", "type": "voltage", "label": "Mains Voltage", "unit": "V" },
+          { "key": "current_a", "type": "current", "label": "Current", "unit": "A" },
+          { "key": "kwh_today", "type": "kwh", "label": "Energy Today", "unit": "kWh" }
+        ]
+      },
+      "state": {
+        "ts": 1763685000,
+        "operation_mode": "CLOUD_DIRECT",
+        "rssi": -63,
+        "ack": "uuid-pwr02-2001",
+        "state": {
+          "ch1": true,
+          "dimmer_pct": 65
+        }
+      },
+      "cmd": {
+        "req_id": "uuid-pwr02-2001",
+        "source": "pwa_cloud",
+        "set": {
+          "ch1": true,
+          "dimmer_pct": 65
+        }
+      },
+      "telemetry": {
+        "ts": 1763685005,
+        "watts": 42.8,
+        "voltage_v": 229.8,
+        "current_a": 0.19,
+        "kwh_today": 0.64,
+        "kwh_total": 72.1
+      },
+      "config": {
+        "schema": "v1.2",
+        "operation_mode": "CLOUD_DIRECT",
+        "power_restore": "OFF",
+        "guardrails": {
+          "hard_locked": false,
+          "min_voltage_v": 170,
+          "max_voltage_v": 270
+        }
+      },
+      "rules": {
+        "schema": "v1.2",
+        "rules": [
+          {
+            "id": "sch_night_dim",
+            "enabled": true,
+            "type": "schedule",
+            "cron": "0 22 * * *",
+            "action": { "dimmer_pct": 20 }
+          }
+        ]
+      },
+      "ota": {
+        "url": "https://firebasestorage.googleapis.com/v0/b/ddoodle/o/firmware%2FPWR-02_v1.2.0.bin",
+        "fw_version": "1.2.0",
+        "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "size": 398120,
+        "sig": "secure-boot-v2"
+      },
+      "status": "online"
+    },
+    "PWR-03": {
+      "device_id": "dd_pwr03_g7h8i9",
+      "room_id": "room_bath",
+      "name": "Master Bath Geyser (16A)",
+      "local_pin": "61529408",
+      "topics": {
+        "info": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/info",
+        "state": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/state",
+        "cmd": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/cmd",
+        "telemetry": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/telemetry",
+        "alert": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/alert",
+        "status": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/status",
+        "config": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/config",
+        "rules": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/rules",
+        "ota": "ddoodle/home_imphal_001/dd_pwr03_g7h8i9/ota"
+      },
+      "info": {
+        "schema": "v1.2",
+        "device_id": "dd_pwr03_g7h8i9",
+        "module_code": "PWR-03",
+        "fw_version": "1.2.0",
+        "hw_rev": "A1",
+        "operation_mode": "CLOUD_DIRECT",
+        "capabilities": [
+          { "key": "ch1", "type": "switch", "label": "Geyser 16A Relay" },
+          { "key": "watts", "type": "power_meter", "label": "Heater Load", "unit": "W" },
+          { "key": "voltage_v", "type": "voltage", "label": "Voltage", "unit": "V" },
+          { "key": "current_a", "type": "current", "label": "Current", "unit": "A" },
+          { "key": "kwh_today", "type": "kwh", "label": "Today's Usage", "unit": "kWh" }
+        ]
+      },
+      "state": {
+        "ts": 1763685000,
+        "operation_mode": "CLOUD_DIRECT",
+        "rssi": -66,
+        "ack": "uuid-pwr03-3001",
+        "state": {
+          "ch1": false
+        }
+      },
+      "cmd": {
+        "req_id": "uuid-pwr03-3001",
+        "source": "pwa_cloud",
+        "set": {
+          "ch1": true
+        }
+      },
+      "telemetry": {
+        "ts": 1763685005,
+        "watts": 0,
+        "voltage_v": 230.5,
+        "current_a": 0,
+        "kwh_today": 1.85,
+        "kwh_total": 312.4,
+        "runtime_min": 0
+      },
+      "config": {
+        "schema": "v1.2",
+        "operation_mode": "CLOUD_DIRECT",
+        "power_restore": "OFF",
+        "guardrails": {
+          "max_runtime_min": 45,
+          "hard_locked": true,
+          "max_current_a": 16
+        }
+      },
+      "rules": {
+        "schema": "v1.2",
+        "rules": [
+          {
+            "id": "sch_morning_geyser",
+            "enabled": true,
+            "type": "schedule",
+            "cron": "0 6 * * *",
+            "action": { "ch1": true }
+          },
+          {
+            "id": "sch_geyser_off",
+            "enabled": true,
+            "type": "schedule",
+            "cron": "30 6 * * *",
+            "action": { "ch1": false }
+          }
+        ]
+      },
+      "alert": {
+        "ts": 1763687700,
+        "type": "MAX_RUNTIME_TRIP",
+        "severity": "WARNING",
+        "message": "Geyser auto-cutoff triggered after 45 min safety ceiling.",
+        "value": 45
+      },
+      "ota": {
+        "url": "https://firebasestorage.googleapis.com/v0/b/ddoodle/o/firmware%2FPWR-03_v1.2.0.bin",
+        "fw_version": "1.2.0",
+        "sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+        "size": 405880,
+        "sig": "secure-boot-v2"
+      },
+      "status": "online"
+    },
+    "WAT-01": {
+      "device_id": "dd_wat01_j1k2l3",
+      "room_id": "room_terrace",
+      "name": "Overhead Tank & Submersible Pump",
+      "local_pin": "90418275",
+      "topics": {
+        "info": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/info",
+        "state": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/state",
+        "cmd": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/cmd",
+        "telemetry": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/telemetry",
+        "alert": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/alert",
+        "status": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/status",
+        "config": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/config",
+        "rules": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/rules",
+        "ota": "ddoodle/home_imphal_001/dd_wat01_j1k2l3/ota"
+      },
+      "info": {
+        "schema": "v1.2",
+        "device_id": "dd_wat01_j1k2l3",
+        "module_code": "WAT-01",
+        "fw_version": "1.2.0",
+        "hw_rev": "A1",
+        "operation_mode": "CLOUD_DIRECT",
+        "capabilities": [
+          { "key": "water_level_pct", "type": "water_level_pct", "label": "Overhead Tank Level", "unit": "%", "min": 0, "max": 100 },
+          { "key": "pump_on", "type": "pump_switch", "label": "Water Pump Motor" },
+          { "key": "dry_run_active", "type": "flow_dry_run", "label": "Dry-Run Guard" }
+        ]
+      },
+      "state": {
+        "ts": 1763685000,
+        "operation_mode": "CLOUD_DIRECT",
+        "rssi": -71,
+        "ack": "uuid-wat01-4001",
+        "state": {
+          "pump_on": false,
+          "auto_fill": true,
+          "auto_low_pct": 25,
+          "auto_high_pct": 90
+        }
+      },
+      "cmd": {
+        "req_id": "uuid-wat01-4001",
+        "source": "pwa_cloud",
+        "set": {
+          "pump_on": true
+        }
+      },
+      "telemetry": {
+        "ts": 1763685005,
+        "water_level_pct": 62,
+        "flow_lpm": 0,
+        "dry_run_active": false,
+        "pump_runtime_sec": 0,
+        "auto_low_pct": 25,
+        "auto_high_pct": 90
+      },
+      "config": {
+        "schema": "v1.2",
+        "operation_mode": "CLOUD_DIRECT",
+        "power_restore": "OFF",
+        "guardrails": {
+          "dry_run_timeout_sec": 30,
+          "max_runtime_min": 40,
+          "hard_locked": true
+        }
+      },
+      "rules": {
+        "schema": "v1.2",
+        "rules": [
+          {
+            "id": "auto_fill_start",
+            "enabled": true,
+            "type": "threshold",
+            "condition": { "key": "water_level_pct", "op": "<=", "value": 25 },
+            "action": { "pump_on": true }
+          },
+          {
+            "id": "auto_fill_stop",
+            "enabled": true,
+            "type": "threshold",
+            "condition": { "key": "water_level_pct", "op": ">=", "value": 90 },
+            "action": { "pump_on": false }
+          }
+        ]
+      },
+      "alert": {
+        "ts": 1763686200,
+        "type": "DRY_RUN_TRIP",
+        "severity": "CRITICAL",
+        "message": "No water flow detected for 30s — submersible pump cut off automatically.",
+        "value": 30
+      },
+      "ota": {
+        "url": "https://firebasestorage.googleapis.com/v0/b/ddoodle/o/firmware%2FWAT-01_v1.2.0.bin",
+        "fw_version": "1.2.0",
+        "sha256": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+        "size": 419204,
+        "sig": "secure-boot-v2"
+      },
+      "status": "online"
+    },
+    "VEH-01": {
+      "device_id": "dd_veh01_m4n5p6",
+      "room_id": "room_garage",
+      "name": "Family SUV (MN-01-DD-2048)",
+      "local_pin": "38105926",
+      "topics": {
+        "info": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/info",
+        "state": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/state",
+        "cmd": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/cmd",
+        "telemetry": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/telemetry",
+        "alert": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/alert",
+        "status": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/status",
+        "config": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/config",
+        "rules": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/rules",
+        "ota": "ddoodle/home_imphal_001/dd_veh01_m4n5p6/ota"
+      },
+      "info": {
+        "schema": "v1.2",
+        "device_id": "dd_veh01_m4n5p6",
+        "module_code": "VEH-01",
+        "fw_version": "1.2.0",
+        "hw_rev": "A1",
+        "operation_mode": "CLOUD_DIRECT",
+        "capabilities": [
+          { "key": "gps", "type": "gps_track", "label": "4G Live GPS Tracker" },
+          { "key": "crash_sos", "type": "crash_sos", "label": "IMU Crash SOS" },
+          { "key": "immobilized", "type": "immobilizer", "label": "Engine Immobilizer" }
+        ]
+      },
+      "state": {
+        "ts": 1763685010,
+        "operation_mode": "CLOUD_DIRECT",
+        "rssi": -79,
+        "ack": "uuid-veh01-5001",
+        "state": {
+          "immobilized": false,
+          "ignition": true,
+          "geofence_armed": true
+        }
+      },
+      "cmd": {
+        "req_id": "uuid-veh01-5001",
+        "source": "pwa_cloud",
+        "set": {
+          "immobilized": false
+        }
+      },
+      "telemetry": {
+        "ts": 1763685010,
+        "lat": 24.3334,
+        "lng": 93.6795,
+        "speed_kmh": 42.5,
+        "heading": 180,
+        "ignition": true,
+        "ext_v": 13.8,
+        "bat_pct": 95,
+        "immobilized": false
+      },
+      "alert": {
+        "ts": 1763685025,
+        "type": "CRASH_DETECTED",
+        "severity": "CRITICAL",
+        "g_force": 6.4,
+        "tilt_deg": 78,
+        "lat": 24.3340,
+        "lng": 93.6801,
+        "cancel_window_sec": 20,
+        "cancelled": false
+      },
+      "config": {
+        "schema": "v1.2",
+        "operation_mode": "CLOUD_DIRECT",
+        "power_restore": "RESTORE_LAST",
+        "guardrails": {
+          "hard_locked": true
+        }
+      },
+      "rules": {
+        "schema": "v1.2",
+        "rules": []
+      },
+      "ota": {
+        "url": "https://firebasestorage.googleapis.com/v0/b/ddoodle/o/firmware%2FVEH-01_v1.2.0.bin",
+        "fw_version": "1.2.0",
+        "sha256": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451",
+        "size": 468912,
+        "sig": "secure-boot-v2"
+      },
+      "status": "online"
+    },
+    "HUB-01": {
+      "device_id": "dd_hub01_q7r8s9",
+      "room_id": "room_living",
+      "name": "DD oodle Local Hub",
+      "local_pin": "55019283",
+      "topics": {
+        "info": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/info",
+        "state": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/state",
+        "cmd": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/cmd",
+        "telemetry": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/telemetry",
+        "alert": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/alert",
+        "status": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/status",
+        "config": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/config",
+        "rules": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/rules",
+        "ota": "ddoodle/home_imphal_001/dd_hub01_q7r8s9/ota"
+      },
+      "info": {
+        "schema": "v1.2",
+        "device_id": "dd_hub01_q7r8s9",
+        "module_code": "HUB-01",
+        "fw_version": "1.2.0",
+        "hw_rev": "A1",
+        "operation_mode": "LOCAL_HUB",
+        "capabilities": [
+          { "key": "hub_health", "type": "hub_status", "label": "Local Offline Hub" },
+          { "key": "local_broker", "type": "switch", "label": "Local MQTT Bridge" }
+        ]
+      },
+      "state": {
+        "ts": 1763685000,
+        "operation_mode": "LOCAL_HUB",
+        "rssi": -44,
+        "ack": "uuid-hub01-6001",
+        "state": {
+          "local_broker": true,
+          "failover_armed": true
+        }
+      },
+      "cmd": {
+        "req_id": "uuid-hub01-6001",
+        "source": "pwa_cloud",
+        "set": {
+          "failover_armed": true
+        }
+      },
+      "telemetry": {
+        "ts": 1763685005,
+        "connected_devices": 4,
+        "lan_clients": 2,
+        "cloud_uplink": true,
+        "uptime_sec": 432810,
+        "cpu_temp_c": 43.2,
+        "local_ip": "192.168.1.50"
+      },
+      "config": {
+        "schema": "v1.2",
+        "operation_mode": "LOCAL_HUB",
+        "power_restore": "ON",
+        "guardrails": {
+          "hard_locked": false
+        }
+      },
+      "rules": {
+        "schema": "v1.2",
+        "rules": [
+          {
+            "id": "hub_inverter_saver",
+            "enabled": true,
+            "type": "interlock",
+            "condition": { "key": "mains_outage", "op": "==", "value": true },
+            "action": { "pwr03_ch1": false }
+          }
+        ]
+      },
+      "ota": {
+        "url": "https://firebasestorage.googleapis.com/v0/b/ddoodle/o/firmware%2FHUB-01_v1.2.0.bin",
+        "fw_version": "1.2.0",
+        "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "size": 524288,
+        "sig": "secure-boot-v2"
+      },
+      "status": "online"
+    }
+  }
+}

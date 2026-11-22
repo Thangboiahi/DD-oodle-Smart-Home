@@ -1,0 +1,208 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted installer or platform admin authorization record.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "role": { "type": "string", "enum": ["installer", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account containing PII (phone, emergency contacts) isolated to owner or admin.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 20, "pattern": "^\\+?[0-9\\-\\s]{7,20}$" },
+        "role": { "type": "string", "enum": ["customer", "family", "installer", "admin"] },
+        "home_ids": { "type": "array", "description": "Bounded list of associated home IDs (max 10)." },
+        "emergency_contacts": { "type": "array", "description": "Bounded list of Crash SOS contacts (max 5)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "role", "home_ids", "emergency_contacts", "createdAt", "updatedAt"]
+    },
+    "Home": {
+      "title": "Home",
+      "description": "Root smart home container owning rooms, devices, automations, 3D layout, and subscription entitlements.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "address": { "type": "string", "maxLength": 300 },
+        "tariff_inr": { "type": "number" },
+        "hub_enabled": { "type": "boolean" },
+        "hub_ip": { "type": "string", "maxLength": 45 },
+        "members": { "type": "object", "description": "Map of uid -> owner | family (max 20 members)." },
+        "subscription": { "type": "object", "description": "Server/admin-controlled tier, status, trial_ends_at, expires_at, dfy_3d_purchased." },
+        "layout_3d": { "type": "object", "description": "Three.js template_id, eco_fallback, and device coordinate pins[]." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "address", "tariff_inr", "hub_enabled", "members", "subscription", "layout_3d", "createdAt", "updatedAt"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Logical room inside a home used for 2D Room Grid and 3D Twin grouping.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "icon": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "sort_order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "icon", "sort_order", "createdAt", "updatedAt"]
+    },
+    "Device": {
+      "title": "Device",
+      "description": "Hardware device registered under a home following Protocol Contract v1.2.",
+      "type": "object",
+      "properties": {
+        "module_code": { "type": "string", "minLength": 3, "maxLength": 20, "pattern": "^[A-Z]{3}-[0-9]{2}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "room_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fw_version": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "operation_mode": { "type": "string", "enum": ["CLOUD_DIRECT", "LOCAL_HUB", "LAN_ONLY", "BLE_ONLY", "FAILSAFE_MANUAL"] },
+        "power_restore": { "type": "string", "enum": ["OFF", "ON", "RESTORE_LAST"] },
+        "local_key": { "type": "string", "minLength": 16, "maxLength": 128 },
+        "local_pin": { "type": "string", "minLength": 8, "maxLength": 8, "pattern": "^[0-9]{8}$" },
+        "guardrails": { "type": "object", "description": "Hardware safety cutoffs with hard_locked protection." },
+        "capabilities": { "type": "array", "description": "Dynamic UI capability descriptors (max 24)." },
+        "settings": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["module_code", "name", "room_id", "fw_version", "operation_mode", "power_restore", "local_pin", "guardrails", "capabilities", "settings", "createdAt", "updatedAt"]
+    },
+    "Automation": {
+      "title": "Automation",
+      "description": "Hybrid automation rule (1-tap Indian recipe or Plus Pro Logic rule).",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "enabled": { "type": "boolean" },
+        "execution_target": { "type": "string", "enum": ["local_device", "local_hub", "cloud"] },
+        "is_recipe": { "type": "boolean" },
+        "trigger": { "type": "object" },
+        "conditions": { "type": "array" },
+        "actions": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "enabled", "execution_target", "is_recipe", "trigger", "conditions", "actions", "createdAt", "updatedAt"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Anchor document linking VEH-01 hardware to a home and 4G M2M SIM renewal metadata.",
+      "type": "object",
+      "properties": {
+        "home_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "sim_iccid": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["home_id", "ownerId", "label", "createdAt", "updatedAt"]
+    },
+    "VehicleTrip": {
+      "title": "VehicleTrip",
+      "description": "Immutable GPS trip history record written by Cloud Run MQTT Bridge.",
+      "type": "object",
+      "properties": {
+        "home_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "start_ts": { "type": "number" },
+        "end_ts": { "type": "number" },
+        "distance_km": { "type": "number" },
+        "max_speed": { "type": "number" },
+        "polyline": { "type": "string", "maxLength": 20000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["home_id", "ownerId", "start_ts", "end_ts", "distance_km", "max_speed", "polyline", "createdAt"]
+    },
+    "Incident": {
+      "title": "Incident",
+      "description": "Life-safety alert ticket (CRASH_DETECTED, GAS_LEAK, SMOKE_FIRE, FALL_DETECTED, PANIC_SOS).",
+      "type": "object",
+      "properties": {
+        "home_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "device_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["CRASH_DETECTED", "GAS_LEAK", "SMOKE_FIRE", "FALL_DETECTED", "PANIC_SOS"] },
+        "severity": { "type": "string", "enum": ["INFO", "WARNING", "CRITICAL"] },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "status": { "type": "string", "enum": ["countdown", "escalated", "cancelled_by_user", "resolved"] },
+        "notified_contacts": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["home_id", "ownerId", "device_id", "type", "severity", "lat", "lng", "status", "notified_contacts", "createdAt", "updatedAt"]
+    },
+    "AmcTicket": {
+      "title": "AmcTicket",
+      "description": "Annual Maintenance Contract & 24h swap priority service ticket for /admin portal.",
+      "type": "object",
+      "properties": {
+        "home_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tier": { "type": "string", "enum": ["core", "plus", "drive", "shield", "all_in_family"] },
+        "priority_24h": { "type": "boolean" },
+        "type": { "type": "string", "enum": ["annual_checkup", "hardware_swap", "dfy_3d_setup", "sim_renewal", "support"] },
+        "status": { "type": "string", "enum": ["open", "scheduled", "in_progress", "resolved", "cancelled"] },
+        "scheduled_date": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["home_id", "ownerId", "tier", "priority_24h", "type", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted installer and platform admin lookup table."
+    },
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles and emergency contacts."
+    },
+    "/homes/{home_id}": {
+      "schema": { "$ref": "#/entities/Home" },
+      "description": "Smart home documents with members map, subscription, and 3D layout."
+    },
+    "/homes/{home_id}/rooms/{room_id}": {
+      "schema": { "$ref": "#/entities/Room" },
+      "description": "Rooms belonging to a home."
+    },
+    "/homes/{home_id}/devices/{device_id}": {
+      "schema": { "$ref": "#/entities/Device" },
+      "description": "Provisioned DD oodle devices and guardrails."
+    },
+    "/homes/{home_id}/automations/{auto_id}": {
+      "schema": { "$ref": "#/entities/Automation" },
+      "description": "Local and cloud automation rules."
+    },
+    "/vehicles/{device_id}": {
+      "schema": { "$ref": "#/entities/Vehicle" },
+      "description": "Vehicle metadata and 4G M2M SIM registration."
+    },
+    "/vehicles/{device_id}/trips/{trip_id}": {
+      "schema": { "$ref": "#/entities/VehicleTrip" },
+      "description": "GPS trip history for VEH-01."
+    },
+    "/incidents/{incident_id}": {
+      "schema": { "$ref": "#/entities/Incident" },
+      "description": "Critical life-safety incidents and Crash SOS escalation records."
+    },
+    "/amc_tickets/{ticket_id}": {
+      "schema": { "$ref": "#/entities/AmcTicket" },
+      "description": "AMC checkups, DFY 3D setup requests, and 24h swap priority tickets."
+    }
+  }
+}

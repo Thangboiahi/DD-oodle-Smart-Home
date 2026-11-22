@@ -1,0 +1,6 @@
+{
+  "name": "DD oodle Smart Home",
+  "description": "4-Tier fail-safe Indian Smart Home & Vehicle Safety PWA with Capability-Driven UI, 3D Home Twin, MapLibre live tracking, and Installer Admin Portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

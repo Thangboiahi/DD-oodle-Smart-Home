@@ -1,0 +1,244 @@
+﻿DD oodle Smart Home — Software, Cloud & PWA Specification (v1.2)
+Target Track: Next.js PWA, Firebase + MQTT Cloud Bridge, 3D View & Admin Portal (AI Studio Pro)
+1. Role, Scope & Decision Autonomy Rule
+You are the Lead Full-Stack Software, IoT Cloud & Next.js PWA Architect for DD oodle — Smart Home Department (local-focused commercial smart home & vehicle safety brand in India).
+
+
+* You Own: The Next.js (App Router) Progressive Web App (PWA), Firebase + MQTT Cloud Run Bridge backend, Capability-Driven Dynamic UI Engine, Interactive Three.js 3D Home View + ₹999 DFY Installer Builder, Hybrid Automation Engine, Subscription/Entitlement Gating, Live Vehicle Tracking & Crash SOS Escalation, Voice C2C endpoints (Phase 1.5), and the /admin Local Installer & Business Portal.
+* Separate Track: Claude builds all ESP32 hardware, PCBs, enclosures, and firmware against the exact same Protocol Contract (v1.2).
+* Decision Autonomy Rule: Make internal software decisions independently (folder structure, Tailwind/shadcn styling, animations, state management, internal helpers, component decomposition, query optimizations). Flag the Master Planner ONLY if a change impacts:
+   1. Protocol Contract (v1.2) MQTT topics, JSON keys/types, module_code, operation_mode enums, capabilities[], guardrails, or rules schemas.
+   2. Shared Transport Interfaces — BLE GATT UUIDs/payloads, Local LAN HTTP/WebSocket routes, SoftAP provisioning fields, or OTA binary/checksum formats.
+   3. Core User Safety, Anti-Bricking Floor, or Cost — Crash SOS countdown/escalation logic, manual fail-safe behavior, or a greater than 20% cloud cost jump.
+2. Tech Stack (Google-First Hybrid)
+* Frontend PWA: Next.js 15+ (App Router, TypeScript), Tailwind CSS, shadcn/ui, Serwist / Workbox (offline caching + installable home-screen PWA), Lucide icons.
+* 3D Home View: Lightweight Three.js (@react-three/fiber or vanilla Three.js for minimal bundle size) with automatic/manual Eco 2D Fallback for low-end Android phones.
+* Maps (Zero API Cost): MapLibre GL JS + OpenStreetMap / Protomaps (live vehicle tracking, geofencing, trip replay, crash markers).
+* Auth & Database: Firebase Auth (Phone OTP + Email/Google Sign-In for India) + Cloud Firestore (Homes, Rooms, Devices, Subscriptions, 3D Layouts, Automations, Trips, Incidents, AMC/SIM records).
+* Real-Time IoT Pipeline: Managed MQTT Broker (EMQX Cloud / GCP Mosquitto) <-> GCP Cloud Run MQTT-to-Firebase Bridge (Node.js/TypeScript) <-> Firebase Realtime Database (RTDB) for sub-second PWA state updates.
+* Escalation & Alerts: Firebase Cloud Functions + FCM Web Push + MSG91 / Twilio / WhatsApp Business API (Crash SOS, Gas/Smoke/Fire, Elderly Fall, renewal reminders).
+* OTA Binary Hosting: Firebase Cloud Storage (versioned .bin files + SHA-256 checksums pushed via .../ota).
+3. Multi-Tier Connectivity & Mode-Switch UX
+* Top-Bar Connectivity Status Pill: Displays active transport in real time: Cloud (4G/Wi-Fi) | Local Hub (Offline LAN) | Direct LAN | Direct Bluetooth (BLE) | Manual Failsafe.
+* v1.2 PWA Local-Access Architecture (Zero Mixed-Content Block): ESP32 devices serve plain http:// and ws:// on port 80 (no on-device TLS on CORE-A/CORE-B).
+* Online: HTTPS PWA -> Firebase RTDB / Cloud MQTT.
+   * Offline Android Chrome: HTTPS PWA -> Web Bluetooth (DD_OODLE_CTRL base UUID dd00xxxx-0d1e-4f5a-8b6c-3e9f2a7c1b40, canonical lowercase).
+   * Offline LAN / iOS Safari: PWA detects offline cloud and offers a 1-tap "Open Local Control" top-level navigation link to http://ddoodle-{device_id}.local/ (or http://ddoodle-hub.local/), which loads the device's ~15 KB gzipped local page using plain ws:// authenticated via the G7 8-digit local device PIN (displayed in PWA Device Settings and printed on hardware QR label). Future Capacitor wrapper / HUB-01 uses DD-HMAC directly against the exact same endpoints.
+* Mode & Power-Cut Controls: Per-device and per-home settings to switch operation_mode (CLOUD_DIRECT, LOCAL_HUB, LAN_ONLY, BLE_ONLY, FAILSAFE_MANUAL), power_restore (OFF, ON, RESTORE_LAST), and safety guardrails.
+4. Subscription, Entitlement Gating & Anti-Bricking Floor
+Implement a centralized entitlements resolver tied to homes/{home_id}/subscription:
+
+
+* Hard Floor (Core — Free Forever): 4-Tier Fail-Safe control, 2D Room Grid, up to 5 basic local schedules, 24h logs, standard FCM push, and all hardware safety cutoffs (WAT-01 dry-run, PWR-03 max-runtime). Expired paid plans MUST downgrade smoothly to Core and never lock out basic device control or safety features.
+* Paid Tiers & Trial: Support automatic 90-day Plus trial countdowns for new homes and annual UPI payment link + WhatsApp renewal flows (D-30, D-7, D-1 reminders):
+
+
+Tier
+	Pricing (INR)
+	Entitlements
+	Core
+	Free Forever
+	4-Tier Fail-Safe control, 2D Room Grid, up to 5 local schedules, 24h logs, standard push, all hardware safety cutoffs
+	Plus
+	₹1,499/yr or ₹149/mo (90-day trial)
+	3D Home View, Pro Logic Automations, Voice (Google Home / Alexa / Siri Shortcuts), WhatsApp alerts, 90-day analytics
+	Drive
+	₹1,499/yr or ₹149/mo (Yr-2+)
+	VEH-01 4G M2M SIM renewal tracking, Crash SOS SMS/WhatsApp/Call escalation, full trip logs & geofences
+	Shield
+	₹2,499/yr or ₹249/mo
+	All Plus + annual AMC checkup scheduling + 24h swap priority badge in /admin
+	All-In Family
+	₹3,499/yr or ₹349/mo
+	All Shield + 1 Drive vehicle + Car-to-Home geofence automations
+	DFY Add-On
+	₹999 One-Time
+	Installer-delivered "Done-For-You 3D Home Twin" configured on-site
+	5. Interactive 3D Home View + ₹999 DFY Installer Flow
+* Customer 3D Home View (Plus / 90-Day Trial): Lightweight Three.js 1-tap interactive 3D floorplan using 4–5 standard Indian home templates (1BHK, 2BHK, 3BHK, Duplex, Compact). Users tap glowing 3D fixtures (lights, fans, geyser, overhead tank) to toggle or inspect live state.
+* Eco / 2D Fallback: Auto-detect low WebGL performance/FPS (or manual toggle) to fall back seamlessly to the crisp 2D Room Grid on budget Android phones.
+* Installer 3D Twin Builder (/admin): Fast touch-friendly layout tool where field technicians pick a template, place installed device_id pins at 3D coordinates (homes/{home_id}/layout_3d), preview live toggles, and mark the one-time ₹999 "Done-For-You 3D Home Twin" add-on delivered.
+6. Hybrid Automation Engine (Recipes + Pro Logic)
+* Two-Tier UX:
+   * Recipes Tab (Default Upfront): 1-tap Indian home presets (Inverter Saver, Geyser Auto-Off, Overhead Tank Auto-Fill, Evening Porch Lights, Coming Home Car Trigger).
+   * Pro Logic Tab (Plus Gated): Full cross-module visual builder supporting IF / ELSE / AND / OR / NOT conditions, time windows, and sensor thresholds.
+* Execution Split & Safety Ceilings:
+   * Basic schedules (Core max 5) and local home rules push down to ESP32 / HUB-01 via ddoodle/{home_id}/{device_id}/rules for offline execution.
+   * Cross-category cloud rules (VEH-01 GPS geofence -> home lights/AC, WhatsApp alerts) run in Firebase Cloud Functions.
+   * Enforce non-overridable UI & backend safety ceilings for WAT-01 dry-run and PWR-03 max-runtime (guardrails.hard_locked: true).
+7. Capability-Driven Dynamic UI Engine (Scales to All 42 Modules)
+Build a Capability Registry driven by each device's capabilities[] array rather than hardcoding 42 separate pages:
+
+
+* switch: Optimistic toggle card with confirmed sync + manual-override indicator.
+* level (stepped/ranged controls): Standardized schema { key, type: "level", min, max, step, label }. Renders stepped hum-free buttons for fan_speed (min: 0, max: 4, step: 1) or smooth sliders for dimmer_pct / cover_pos_pct (min: 0, max: 100, step: 1) under one unified UI component.
+* power_meter / voltage / current / kwh: Live wattage gauge + daily/monthly INR cost calculator (using homes/{home_id}.tariff_inr).
+* water_level_pct + pump_switch + flow_dry_run: Animated vertical tank fill level, dry-run protection badge, and low/high auto-fill sliders.
+* gps_track + crash_sos + immobilizer: Full-screen MapLibre tracker, ignition/speed HUD, geofence editor, trip replay, and PIN/biometric-gated Engine Immobilize button (warns if vehicle is moving over 5 km/h).
+* sensor_gauge (Temp, RH, CO2, PM2.5, Gas, TDS, pH, LPG Cylinder Weight): Color-coded status pills + 24h (Core) / 90-day (Plus) sparklines.
+* lock_state / video_stream: Slide-to-unlock, PIN/NFC/fingerprint user management, access logs, and live snapshot/MJPEG/WebRTC stream.
+* vitals / fall_alert / pill_dispenser: Assisted-living dashboard with mandatory non-medical wellness disclaimer banner.
+8. Life-Safety Alert & Crash SOS Workflow
+On any CRITICAL payload on .../alert (CRASH_DETECTED, GAS_LEAK, SMOKE_FIRE, FALL_DETECTED, PANIC_SOS):
+
+
+1. Crash Countdown Modal (VEH-01 / VEH-03): Opens loud high-contrast 20-second "I'm Safe — Cancel SOS" overlay synced with hardware buzzer/button.
+2. Escalation Pipeline: If uncancelled when timer expires:
+   * Cloud Function fires SMS + WhatsApp + Automated Voice Call (MSG91/Twilio) to all configured emergency_contacts[] with live map link, exact coordinates, and impact G-force.
+   * Sends high-priority FCM Push to family members and opens a live incident ticket in /admin.
+3. Cross-Device Home Safety Rules: Support instant local/cloud interlocks (e.g., WAT-02 leak -> close WAT-03 valve; SAF-01 LPG leak -> turn ON exhaust via PWR-01 + trigger SEC-06 siren).
+9. Voice & Ecosystem Sequencing
+* Phase 1.5 Voice (Plus Tier): Reserve clean Cloud Function endpoints for Google Smart Home C2C fulfillment, Amazon Alexa Smart Home Skill, and authenticated Siri Shortcuts webhook URLs.
+* Phase 2/3 Apple Home / Matter: Do NOT implement native Matter/HomeKit commissioning inside the PWA—Matter Bridge lives exclusively on HUB-01 in Phase 2/3.
+10. Three User Roles & App Sections
+1. Customer PWA: Home Dashboard (2D Room Grid + 1-Tap 3D Home View toggle + Quick Scenes + Energy/Water cards), Vehicle Safety Tab (Live Map, Geofences, Trip Replay, Emergency Contacts, Immobilizer), Automations Tab (Recipes + Pro Logic), Billing/Trial Tab (UPI renewal + plan comparison), Device Setup Wizard (QR scan -> SoftAP Wi-Fi provisioning -> Room assignment).
+2. Family Member Role: Scoped room/device/vehicle permissions (e.g., restrict door locks, immobilizer, and billing).
+3. Local Installer & Business Admin Portal (/admin):
+   * Customer & Home Onboarding (QR batch-provisioning + ₹999 DFY 3D Twin Layout Builder).
+   * Fleet Health & Diagnostics (live online/offline, RSSI, battery, voltage anomalies across installed homes).
+   * OTA Firmware Manager (upload .bin by module_code, SHA-256 hash, staged test -> fleet rollout).
+   * Subscriptions, 4G M2M SIM & AMC Manager (Plus/Drive/Shield/All-In renewal tracking, 24h swap priority SLA badges, service tickets).
+11. Firestore & RTDB Data Schema (v1.1)
+Firestore Structure
+* users/{uid}: { name, phone, role, home_ids[], emergency_contacts[] }
+* homes/{home_id}: { name, address, tariff_inr, hub_enabled, hub_ip, members{}, subscription: { tier, status, trial_ends_at, expires_at, dfy_3d_purchased }, layout_3d: { template_id, eco_fallback, pins[] } }
+* homes/{home_id}/rooms/{room_id}: { name, icon, sort_order }
+* homes/{home_id}/devices/{device_id}: { module_code, name, room_id, fw_version, operation_mode, power_restore, local_key, local_pin, guardrails{}, capabilities[], settings{} }
+* homes/{home_id}/automations/{auto_id}: { enabled, execution_target, is_recipe, trigger{}, conditions[], actions[] }
+* vehicles/{device_id}/trips/{trip_id}: { start_ts, end_ts, distance_km, max_speed, polyline }
+* incidents/{incident_id}: { home_id, device_id, type, severity, lat, lng, status, notified_contacts[] }
+* amc_tickets/{ticket_id}: { home_id, tier, priority_24h, type, status, scheduled_date }
+Firebase Realtime Database (RTDB — Fast Live Mirror)
+* /live/{home_id}/{device_id}: { online, ts, operation_mode, rssi, ack, state{}, telemetry{} }
+12. Protocol Contract (v1.2) & Frozen Shared Transports
+Topic Structure
+* State: ddoodle/{home_id}/{device_id}/state (Retained, QoS 1)
+* Command: ddoodle/{home_id}/{device_id}/cmd (QoS 1)
+* Telemetry: ddoodle/{home_id}/{device_id}/telemetry (QoS 0/1)
+* Critical Alert: ddoodle/{home_id}/{device_id}/alert (QoS 1)
+* Online/Offline LWT: ddoodle/{home_id}/{device_id}/status ("online" / "offline", Retained)
+* Config & Guardrails: ddoodle/{home_id}/{device_id}/config (QoS 1, Retained)
+* Local Schedules & Rules: ddoodle/{home_id}/{device_id}/rules (QoS 1, Retained)
+* OTA Update: ddoodle/{home_id}/{device_id}/ota (QoS 1)
+* Device Info (G1): ddoodle/{home_id}/{device_id}/info (Retained, QoS 1)
+Payload Schemas
+Device Info (G1 / .../info)
+
+
+{}
+  "schema": "v1.2",
+  "device_id": "dd_pwr01_a1b2c3",
+  "module_code": "PWR-01",
+  "fw_version": "1.2.0",
+  "hw_rev": "A1",
+  "operation_mode": "CLOUD_DIRECT",
+  "capabilities": [
+    { "key": "ch1", "type": "switch", "label": "Light 1" },
+    { "key": "fan_speed", "type": "level", "min": 0, "max": 4, "step": 1, "label": "Fan" }
+  ]
+}
+Command (G4 / .../cmd)
+
+
+{}
+  "req_id": "uuid-1234",
+  "source": "pwa_cloud",
+  "set": {
+    "ch1": true,
+    "fan_speed": 3
+  }
+}
+State (G2 & G3 / .../state)
+
+
+{}
+  "ts": 1763685000,
+  "operation_mode": "CLOUD_DIRECT",
+  "rssi": -58,
+  "ack": "uuid-1234",
+  "state": {
+    "ch1": true,
+    "fan_speed": 3
+  }
+}
+Config & Guardrails (.../config)
+
+
+{}
+  "schema": "v1.2",
+  "operation_mode": "CLOUD_DIRECT",
+  "power_restore": "RESTORE_LAST",
+  "guardrails": {
+    "max_runtime_min": 45,
+    "dry_run_timeout_sec": 30,
+    "hard_locked": true
+  }
+}
+Local Rules (.../rules)
+
+
+{}
+  "schema": "v1.2",
+  "rules": [
+    {
+      "id": "sch_01",
+      "enabled": true,
+      "type": "schedule",
+      "cron": "0 6 * * *",
+      "action": {
+        "ch1": true
+      }
+    }
+  ]
+}
+OTA Update Payload (G5 / .../ota)
+{
+  "url": "https://firebasestorage.googleapis.com/v0/b/ddoodle/o/firmware%2FPWR-01_v1.2.0.bin",
+  "fw_version": "1.2.0",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "size": 412352,
+  "sig": "secure-boot-v2"
+}
+Vehicle Telemetry (.../telemetry)
+{
+  "ts": 1763685010,
+  "lat": 24.3334,
+  "lng": 93.6795,
+  "speed_kmh": 42.5,
+  "heading": 180,
+  "ignition": true,
+  "ext_v": 13.8,
+  "bat_pct": 95,
+  "immobilized": false
+}
+Vehicle Crash Alert (.../alert)
+{
+  "ts": 1763685025,
+  "type": "CRASH_DETECTED",
+  "severity": "CRITICAL",
+  "g_force": 6.4,
+  "tilt_deg": 78,
+  "lat": 24.3340,
+  "lng": 93.6801,
+  "cancel_window_sec": 20,
+  "cancelled": false
+}
+Frozen Shared Transports Reference
+* BLE GATT DD_OODLE_CTRL UUID Table (Canonical Lowercase):
+   * Base UUID: dd00xxxx-0d1e-4f5a-8b6c-3e9f2a7c1b40
+   * Service: dd000001-0d1e-4f5a-8b6c-3e9f2a7c1b40
+   * AUTH Challenge/Response (dd000002): Write nonce challenge, read HMAC-SHA256(local_key, nonce).
+   * CMD (dd000003), STATE (dd000004), TELEMETRY (dd000005), ALERT (dd000006), CONFIG (dd000007), RULES (dd000008), INFO (dd000009).
+* LAN HTTP/WS API Table (Port 80):
+   * mDNS service: _ddoodle._tcp at ddoodle-{device_id}.local
+   * Endpoints: GET /api/v1/info, GET /api/v1/state, POST /api/v1/cmd, GET /api/v1/config, POST /api/v1/config, WS /api/v1/ws
+   * Authentication: DD-HMAC header (HMAC-SHA256 signature with +-60s timestamp window) OR G7 local_pin session cookie.
+* SoftAP Provisioning Flow:
+   * SSID: DDoodle-Setup-XXXX (IP: 192.168.4.1)
+   * POST /api/v1/prov payload: { ssid, pass, home_id, claim_token, local_key, operation_mode? }
+* OTA Firmware Security:
+   * Headers: X-DD-SHA256, X-DD-FW. Verification: ESP32 Secure Boot v2 signature validation + 60s rollback watchdog baseline.
+13. Phased Execution Sprints
+* Sprint 1 (Foundation & Simulator): Next.js App Router PWA boilerplate, Firebase Auth (Phone/Email), Firestore + RTDB security rules, MQTT-to-Firebase Cloud Run bridge, Entitlement Resolver (Core/Plus/Drive/Shield/All-In), Capability UI Engine, and a dev-mode Virtual Device Simulator to test all Phase 1 hardware before PCBs arrive.
+* Sprint 2 (Phase 1 MVP Experience): Full interactive dashboards for PWR-01, PWR-02, PWR-03, WAT-01, VEH-01 (MapLibre live tracker + 20s Crash SOS modal), HUB-01 (4-Tier Connectivity Pill + Mode/BLE Fallback), Lightweight Three.js 3D Home View (1BHK–3BHK templates + Eco 2D fallback), and Recipes + Pro Logic automation UI.
+* Sprint 3 (Operations, Voice & Scale): /admin Installer Portal (QR provisioning, ₹999 DFY 3D Twin Builder, OTA manager, 4G SIM & AMC tracker), Phase 1.5 Voice C2C endpoints (Google Home / Alexa / Siri Shortcuts), and remaining Phase 2/3 capability widgets.

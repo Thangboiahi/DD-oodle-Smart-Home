@@ -1,0 +1,623 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // Global Safety Net (Default Deny Catch-All)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Reusable Hardened Global Primitives
+    // =========================================================================
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.phone_number != null
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwnerUid(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'thangboiahi@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Master Gate helpers on parent homes/{homeId}
+    function getHome(homeId) {
+      return get(/databases/$(database)/documents/homes/$(homeId)).data;
+    }
+
+    function homeExists(homeId) {
+      return exists(/databases/$(database)/documents/homes/$(homeId));
+    }
+
+    function isHomeOwner(homeId) {
+      return isVerifiedUser() &&
+        homeExists(homeId) &&
+        getHome(homeId).ownerId == request.auth.uid;
+    }
+
+    function isHomeMember(homeId) {
+      return isSignedIn() &&
+        homeExists(homeId) &&
+        request.auth.uid in getHome(homeId).members;
+    }
+
+    function hasShieldSla(homeData) {
+      return homeData.subscription.status == 'active' &&
+        (homeData.subscription.tier == 'shield' || homeData.subscription.tier == 'all_in_family');
+    }
+
+    // =========================================================================
+    // Entity Validation Blueprints (Anti-Update-Gap & Hard-Locked Guardrails)
+    // =========================================================================
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['email', 'role', 'createdAt']) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+        data.role in ['installer', 'admin'] &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['name', 'phone', 'role', 'home_ids', 'emergency_contacts', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['name', 'phone', 'role', 'home_ids', 'emergency_contacts', 'createdAt', 'updatedAt']) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 20 &&
+        data.role in ['customer', 'family', 'installer', 'admin'] &&
+        data.home_ids is list && data.home_ids.size() <= 10 &&
+        (data.home_ids.size() == 0 || (data.home_ids[0] is string && data.home_ids[0].size() <= 128)) &&
+        data.emergency_contacts is list && data.emergency_contacts.size() <= 5 &&
+        (data.emergency_contacts.size() == 0 || data.emergency_contacts[0] is map) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSubscriptionMap(sub) {
+      return sub is map &&
+        sub.keys().hasAll(['tier', 'status', 'trial_ends_at', 'expires_at', 'dfy_3d_purchased']) &&
+        sub.keys().hasOnly(['tier', 'status', 'trial_ends_at', 'expires_at', 'dfy_3d_purchased']) &&
+        sub.tier in ['core', 'plus', 'drive', 'shield', 'all_in_family'] &&
+        sub.status in ['active', 'trial', 'expired', 'cancelled', 'past_due'] &&
+        (sub.trial_ends_at == null || sub.trial_ends_at is int) &&
+        (sub.expires_at == null || sub.expires_at is int) &&
+        sub.dfy_3d_purchased is bool;
+    }
+
+    function isValidLayout3DMap(layout) {
+      return layout is map &&
+        layout.keys().hasAll(['template_id', 'eco_fallback', 'pins']) &&
+        layout.keys().hasOnly(['template_id', 'eco_fallback', 'pins']) &&
+        layout.template_id in ['1bhk', '2bhk', '3bhk', 'duplex', 'compact'] &&
+        layout.eco_fallback is bool &&
+        layout.pins is list && layout.pins.size() <= 64 &&
+        (layout.pins.size() == 0 || layout.pins[0] is map);
+    }
+
+    function isValidHome(data) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'address', 'tariff_inr', 'hub_enabled',
+          'hub_ip', 'members', 'subscription', 'layout_3d', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'name', 'address', 'tariff_inr', 'hub_enabled',
+          'hub_ip', 'members', 'subscription', 'layout_3d', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        data.address is string && data.address.size() <= 300 &&
+        data.tariff_inr is number && data.tariff_inr >= 0 && data.tariff_inr <= 50 &&
+        data.hub_enabled is bool &&
+        (data.hub_ip == null || (data.hub_ip is string && data.hub_ip.size() <= 45)) &&
+        data.members is map && data.members.keys().size() >= 1 && data.members.keys().size() <= 20 &&
+        data.ownerId in data.members &&
+        data.members[data.ownerId] == 'owner' &&
+        isValidSubscriptionMap(data.subscription) &&
+        isValidLayout3DMap(data.layout_3d) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRoom(data) {
+      return data.keys().hasAll(['name', 'icon', 'sort_order', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['name', 'icon', 'sort_order', 'createdAt', 'updatedAt']) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 60 &&
+        data.icon is string && data.icon.size() >= 1 && data.icon.size() <= 40 &&
+        data.sort_order is number && data.sort_order >= 0 && data.sort_order <= 100 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidGuardrails(g) {
+      return g is map &&
+        g.keys().hasAll(['hard_locked']) &&
+        g.keys().hasOnly([
+          'hard_locked', 'max_runtime_min', 'dry_run_timeout_sec',
+          'min_voltage_v', 'max_voltage_v', 'max_current_a'
+        ]) &&
+        g.hard_locked is bool &&
+        (!('max_runtime_min' in g) || (g.max_runtime_min is number && g.max_runtime_min >= 5 && g.max_runtime_min <= 90)) &&
+        (!('dry_run_timeout_sec' in g) || (g.dry_run_timeout_sec is number && g.dry_run_timeout_sec >= 10 && g.dry_run_timeout_sec <= 60)) &&
+        (!('min_voltage_v' in g) || (g.min_voltage_v is number && g.min_voltage_v >= 80 && g.min_voltage_v <= 220)) &&
+        (!('max_voltage_v' in g) || (g.max_voltage_v is number && g.max_voltage_v >= 230 && g.max_voltage_v <= 310)) &&
+        (!('max_current_a' in g) || (g.max_current_a is number && g.max_current_a >= 1 && g.max_current_a <= 32));
+    }
+
+    function isValidDevice(data) {
+      return data.keys().hasAll([
+          'module_code', 'name', 'room_id', 'fw_version', 'operation_mode',
+          'power_restore', 'local_pin', 'guardrails', 'capabilities', 'settings',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'module_code', 'name', 'room_id', 'fw_version', 'operation_mode',
+          'power_restore', 'local_key', 'local_pin', 'guardrails', 'capabilities',
+          'settings', 'createdAt', 'updatedAt'
+        ]) &&
+        data.module_code is string && data.module_code.size() >= 3 && data.module_code.size() <= 20 &&
+        data.module_code.matches('^[A-Z]{3}-[0-9]{2}$') &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        isValidId(data.room_id) &&
+        data.fw_version is string && data.fw_version.size() >= 1 && data.fw_version.size() <= 32 &&
+        data.operation_mode in ['CLOUD_DIRECT', 'LOCAL_HUB', 'LAN_ONLY', 'BLE_ONLY', 'FAILSAFE_MANUAL'] &&
+        data.power_restore in ['OFF', 'ON', 'RESTORE_LAST'] &&
+        (!('local_key' in data) || (data.local_key is string && data.local_key.size() >= 16 && data.local_key.size() <= 128)) &&
+        data.local_pin is string && data.local_pin.size() == 8 && data.local_pin.matches('^[0-9]{8}$') &&
+        isValidGuardrails(data.guardrails) &&
+        // Non-overridable hardware safety ceilings (Red Team Patched: cannot omit required cutoff keys)
+        (data.module_code != 'PWR-03' || (data.guardrails.hard_locked == true && 'max_runtime_min' in data.guardrails)) &&
+        (data.module_code != 'WAT-01' || (data.guardrails.hard_locked == true && 'dry_run_timeout_sec' in data.guardrails)) &&
+        data.capabilities is list && data.capabilities.size() >= 1 && data.capabilities.size() <= 24 &&
+        data.capabilities[0] is map &&
+        data.settings is map &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAutomation(data) {
+      return data.keys().hasAll([
+          'name', 'enabled', 'execution_target', 'is_recipe',
+          'trigger', 'conditions', 'actions', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'name', 'enabled', 'execution_target', 'is_recipe',
+          'trigger', 'conditions', 'actions', 'createdAt', 'updatedAt'
+        ]) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        data.enabled is bool &&
+        data.execution_target in ['local_device', 'local_hub', 'cloud'] &&
+        data.is_recipe is bool &&
+        data.trigger is map &&
+        data.conditions is list && data.conditions.size() <= 12 &&
+        (data.conditions.size() == 0 || data.conditions[0] is map) &&
+        data.actions is list && data.actions.size() >= 1 && data.actions.size() <= 12 &&
+        data.actions[0] is map &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidVehicle(data) {
+      return data.keys().hasAll(['home_id', 'ownerId', 'label', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['home_id', 'ownerId', 'label', 'sim_iccid', 'createdAt', 'updatedAt']) &&
+        isValidId(data.home_id) &&
+        isValidId(data.ownerId) &&
+        data.label is string && data.label.size() >= 1 && data.label.size() <= 80 &&
+        (!('sim_iccid' in data) || (data.sim_iccid is string && data.sim_iccid.size() <= 32)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTrip(data) {
+      return data.keys().hasAll([
+          'home_id', 'ownerId', 'start_ts', 'end_ts',
+          'distance_km', 'max_speed', 'polyline', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'home_id', 'ownerId', 'start_ts', 'end_ts',
+          'distance_km', 'max_speed', 'polyline', 'createdAt'
+        ]) &&
+        isValidId(data.home_id) &&
+        isValidId(data.ownerId) &&
+        data.start_ts is number &&
+        data.end_ts is number && data.end_ts >= data.start_ts &&
+        data.distance_km is number && data.distance_km >= 0 &&
+        data.max_speed is number && data.max_speed >= 0 &&
+        data.polyline is string && data.polyline.size() <= 20000 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidIncident(data) {
+      return data.keys().hasAll([
+          'home_id', 'ownerId', 'device_id', 'type', 'severity',
+          'lat', 'lng', 'status', 'notified_contacts', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'home_id', 'ownerId', 'device_id', 'type', 'severity',
+          'lat', 'lng', 'status', 'notified_contacts', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.home_id) &&
+        isValidId(data.ownerId) &&
+        isValidId(data.device_id) &&
+        data.type in ['CRASH_DETECTED', 'GAS_LEAK', 'SMOKE_FIRE', 'FALL_DETECTED', 'PANIC_SOS'] &&
+        data.severity in ['INFO', 'WARNING', 'CRITICAL'] &&
+        data.lat is number && data.lat >= -90 && data.lat <= 90 &&
+        data.lng is number && data.lng >= -180 && data.lng <= 180 &&
+        data.status in ['countdown', 'escalated', 'cancelled_by_user', 'resolved'] &&
+        data.notified_contacts is list && data.notified_contacts.size() <= 10 &&
+        (data.notified_contacts.size() == 0 || (data.notified_contacts[0] is string && data.notified_contacts[0].size() <= 40)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAmcTicket(data) {
+      return data.keys().hasAll([
+          'home_id', 'ownerId', 'tier', 'priority_24h',
+          'type', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'home_id', 'ownerId', 'tier', 'priority_24h',
+          'type', 'status', 'scheduled_date', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.home_id) &&
+        isValidId(data.ownerId) &&
+        data.tier in ['core', 'plus', 'drive', 'shield', 'all_in_family'] &&
+        data.priority_24h is bool &&
+        data.type in ['annual_checkup', 'hardware_swap', 'dfy_3d_setup', 'sim_renewal', 'support'] &&
+        data.status in ['open', 'scheduled', 'in_progress', 'resolved', 'cancelled'] &&
+        (!('scheduled_date' in data) || (data.scheduled_date is string && data.scheduled_date.size() <= 40)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // Collection Rules
+    // =========================================================================
+
+    // 1. Admins Table (Bootstrapped verified admin or existing admin only)
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && (isOwnerUid(uid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(uid) && isAdmin() && isValidAdminRecord(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(uid) && isAdmin() && isValidAdminRecord(incoming()) &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(uid) && isAdmin();
+    }
+
+    // 2. Users (Strict PII Isolation & Anti-Role-Escalation)
+    match /users/{uid} {
+      allow get: if isValidId(uid) && (isOwnerUid(uid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isVerifiedUser() &&
+        isValidId(uid) &&
+        isValidUserProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (isOwnerUid(uid) && incoming().role == 'customer')
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(uid) &&
+        isValidUserProfile(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwnerUid(uid) &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'home_ids', 'emergency_contacts', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(uid) && isAdmin();
+    }
+
+    // 3. Homes (Master Container + Subscription Tamper Guard)
+    match /homes/{homeId} {
+      allow get: if isSignedIn() && isValidId(homeId) && (
+        isAdmin() ||
+        existing().ownerId == request.auth.uid ||
+        request.auth.uid in existing().members
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid ||
+        request.auth.uid in resource.data.members
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(homeId) &&
+        isValidHome(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            incoming().ownerId == request.auth.uid &&
+            incoming().subscription.tier == 'core' &&
+            incoming().subscription.status in ['trial', 'active'] &&
+            incoming().subscription.dfy_3d_purchased == false
+          )
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(homeId) &&
+        isValidHome(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().updatedAt == request.time &&
+        (
+          // Tier 1: Admin / Installer (DFY 3D Twin delivery, subscription updates)
+          isAdmin() ||
+          // Action A: Home Owner updates home profile, tariff, hub, or family members (NEVER subscription)
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'address', 'tariff_inr', 'hub_enabled', 'hub_ip', 'members', 'updatedAt'
+            ])
+          ) ||
+          // Action B: Home Owner updates Eco 2D fallback / 3D layout preferences
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['layout_3d', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(homeId) && isAdmin();
+
+      // 3a. Rooms Subcollection (Master Gate)
+      match /rooms/{roomId} {
+        allow get: if isSignedIn() && isValidId(homeId) && isValidId(roomId) && (isAdmin() || isHomeMember(homeId));
+        allow list: if isSignedIn() && isValidId(homeId) && (isAdmin() || isHomeMember(homeId));
+        allow create: if isVerifiedUser() &&
+          isValidId(homeId) && isValidId(roomId) &&
+          isValidRoom(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          (isAdmin() || isHomeOwner(homeId));
+        allow update: if isVerifiedUser() &&
+          isValidId(homeId) && isValidId(roomId) &&
+          isValidRoom(incoming()) &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          (
+            isAdmin() ||
+            (
+              isHomeOwner(homeId) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['name', 'icon', 'sort_order', 'updatedAt'])
+            )
+          );
+        allow delete: if isVerifiedUser() && isValidId(homeId) && isValidId(roomId) && (isAdmin() || isHomeOwner(homeId));
+      }
+
+      // 3b. Devices Subcollection (Master Gate + Hard-Locked Guardrail Enforcement)
+      match /devices/{deviceId} {
+        allow get: if isSignedIn() && isValidId(homeId) && isValidId(deviceId) && (isAdmin() || isHomeMember(homeId));
+        allow list: if isSignedIn() && isValidId(homeId) && (isAdmin() || isHomeMember(homeId));
+        allow create: if isVerifiedUser() &&
+          isValidId(homeId) && isValidId(deviceId) &&
+          isValidDevice(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          (isAdmin() || isHomeOwner(homeId));
+        allow update: if isVerifiedUser() &&
+          isValidId(homeId) && isValidId(deviceId) &&
+          isValidDevice(incoming()) &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().module_code == existing().module_code &&
+          incoming().updatedAt == request.time &&
+          (
+            isAdmin() ||
+            (
+              // Home Owner updates mode/power_restore/settings/guardrails without unlocking hard_locked
+              isHomeOwner(homeId) &&
+              (!existing().guardrails.hard_locked || incoming().guardrails.hard_locked == true) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name', 'room_id', 'operation_mode', 'power_restore', 'guardrails', 'settings', 'updatedAt'
+              ])
+            )
+          );
+        allow delete: if isVerifiedUser() && isValidId(homeId) && isValidId(deviceId) && (isAdmin() || isHomeOwner(homeId));
+      }
+
+      // 3c. Automations Subcollection (Master Gate)
+      match /automations/{autoId} {
+        allow get: if isSignedIn() && isValidId(homeId) && isValidId(autoId) && (isAdmin() || isHomeMember(homeId));
+        allow list: if isSignedIn() && isValidId(homeId) && (isAdmin() || isHomeMember(homeId));
+        allow create: if isVerifiedUser() &&
+          isValidId(homeId) && isValidId(autoId) &&
+          isValidAutomation(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          (isAdmin() || isHomeOwner(homeId));
+        allow update: if isVerifiedUser() &&
+          isValidId(homeId) && isValidId(autoId) &&
+          isValidAutomation(incoming()) &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          (
+            isAdmin() ||
+            (
+              isHomeOwner(homeId) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name', 'enabled', 'execution_target', 'is_recipe', 'trigger', 'conditions', 'actions', 'updatedAt'
+              ])
+            )
+          );
+        allow delete: if isVerifiedUser() && isValidId(homeId) && isValidId(autoId) && (isAdmin() || isHomeOwner(homeId));
+      }
+    }
+
+    // 4. Vehicles & Trip History (Trips are immutable server/admin telemetry)
+    match /vehicles/{deviceId} {
+      allow get: if isSignedIn() && isValidId(deviceId) && (
+        isAdmin() ||
+        existing().ownerId == request.auth.uid ||
+        isHomeMember(existing().home_id)
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(deviceId) &&
+        isValidVehicle(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        homeExists(incoming().home_id) &&
+        (isAdmin() || (incoming().ownerId == request.auth.uid && isHomeOwner(incoming().home_id)));
+      allow update: if isVerifiedUser() &&
+        isValidId(deviceId) &&
+        isValidVehicle(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().home_id == existing().home_id &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['label', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(deviceId) && isAdmin();
+
+      match /trips/{tripId} {
+        allow get: if isSignedIn() && isValidId(deviceId) && isValidId(tripId) && (
+          isAdmin() ||
+          existing().ownerId == request.auth.uid ||
+          isHomeMember(existing().home_id)
+        );
+        allow list: if isSignedIn() && isValidId(deviceId) && (
+          isAdmin() ||
+          resource.data.ownerId == request.auth.uid
+        );
+        // Only Admin / Cloud Run MQTT Bridge can create trips; trips are immutable
+        allow create: if isAdmin() && isValidId(deviceId) && isValidId(tripId) &&
+          isValidTrip(incoming()) && incoming().createdAt == request.time;
+        allow update, delete: if isAdmin() && isValidId(deviceId) && isValidId(tripId);
+      }
+    }
+
+    // 5. Life-Safety Incidents (Crash SOS Terminal State Locking)
+    match /incidents/{incidentId} {
+      allow get: if isSignedIn() && isValidId(incidentId) && (
+        isAdmin() ||
+        existing().ownerId == request.auth.uid ||
+        isHomeMember(existing().home_id)
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(incidentId) &&
+        isValidIncident(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        homeExists(incoming().home_id) &&
+        (
+          isAdmin() ||
+          (
+            incoming().ownerId == request.auth.uid &&
+            isHomeOwner(incoming().home_id) &&
+            incoming().status == 'countdown'
+          )
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(incidentId) &&
+        isValidIncident(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().home_id == existing().home_id &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().device_id == existing().device_id &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          // Action: User cancels active 20-second Crash SOS countdown ("I'm Safe — Cancel SOS")
+          (
+            existing().status == 'countdown' &&
+            incoming().status == 'cancelled_by_user' &&
+            (existing().ownerId == request.auth.uid || isHomeMember(existing().home_id)) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(incidentId) && isAdmin();
+    }
+
+    // 6. AMC & 24h Swap Priority Tickets
+    match /amc_tickets/{ticketId} {
+      allow get: if isSignedIn() && isValidId(ticketId) && (
+        isAdmin() ||
+        existing().ownerId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.ownerId == request.auth.uid
+      );
+      allow create: if isVerifiedUser() &&
+        isValidId(ticketId) &&
+        isValidAmcTicket(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        homeExists(incoming().home_id) &&
+        (
+          isAdmin() ||
+          (
+            incoming().ownerId == request.auth.uid &&
+            isHomeOwner(incoming().home_id) &&
+            incoming().status == 'open' &&
+            incoming().tier == getHome(incoming().home_id).subscription.tier &&
+            (!incoming().priority_24h || hasShieldSla(getHome(incoming().home_id)))
+          )
+        );
+      allow update: if isVerifiedUser() &&
+        isValidId(ticketId) &&
+        isValidAmcTicket(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().home_id == existing().home_id &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          // Action: Owner can cancel their own non-terminal open ticket
+          (
+            existing().ownerId == request.auth.uid &&
+            existing().status in ['open', 'scheduled'] &&
+            incoming().status == 'cancelled' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(ticketId) && isAdmin();
+    }
+  }
+}
