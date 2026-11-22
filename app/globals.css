@@ -1,1 +1,315 @@
 @import "tailwindcss";
+
+@theme inline {
+  --color-canvas: var(--dd-canvas);
+  --color-surface: var(--dd-surface);
+  --color-surface-elevated: var(--dd-surface-elevated);
+  --color-surface-muted: var(--dd-surface-muted);
+  --color-foreground: var(--dd-fg);
+  --color-foreground-secondary: var(--dd-fg-secondary);
+  --color-foreground-muted: var(--dd-fg-muted);
+  --color-border: var(--dd-border);
+  --color-border-strong: var(--dd-border-strong);
+  --color-accent: var(--dd-accent);
+  --color-accent-foreground: var(--dd-accent-fg);
+  --color-accent-soft: var(--dd-accent-soft);
+  --color-accent-border: var(--dd-accent-border);
+  --color-danger: var(--dd-danger);
+  --color-danger-soft: var(--dd-danger-soft);
+  --color-warning: var(--dd-warning);
+  --color-warning-soft: var(--dd-warning-soft);
+  --color-success: var(--dd-success);
+  --color-success-soft: var(--dd-success-soft);
+}
+
+/* ============================================================================
+ * DD oodle Smart Home — Precision Industrial Design Tokens
+ * Themes: Obsidian Slate (default dark), Alabaster Daylight (light), System Auto
+ * Accents: cyan | emerald | amber | steel
+ * Density: comfortable | compact
+ * Life-Safety Override: [data-life-safety="critical"]
+ * ============================================================================ */
+
+:root,
+[data-theme="obsidian"] {
+  color-scheme: dark;
+  --dd-canvas: #090b0f;
+  --dd-surface: #10141c;
+  --dd-surface-elevated: #151b26;
+  --dd-surface-muted: #1b2230;
+  --dd-glass: rgba(16, 20, 28, 0.82);
+
+  --dd-fg: #f1f5f9;
+  --dd-fg-secondary: #94a3b8;
+  --dd-fg-muted: #64748b;
+
+  --dd-border: rgba(148, 163, 184, 0.14);
+  --dd-border-strong: rgba(148, 163, 184, 0.26);
+
+  --dd-danger: #f43f5e;
+  --dd-danger-soft: rgba(244, 63, 94, 0.14);
+  --dd-warning: #f59e0b;
+  --dd-warning-soft: rgba(245, 158, 11, 0.14);
+  --dd-success: #10b981;
+  --dd-success-soft: rgba(16, 185, 129, 0.14);
+
+  --dd-scroll-track: transparent;
+  --dd-scroll-thumb: rgba(148, 163, 184, 0.22);
+  --dd-scroll-thumb-hover: rgba(148, 163, 184, 0.42);
+}
+
+[data-theme="alabaster"] {
+  color-scheme: light;
+  --dd-canvas: #f4f6f9;
+  --dd-surface: #ffffff;
+  --dd-surface-elevated: #f9fafc;
+  --dd-surface-muted: #edf0f5;
+  --dd-glass: rgba(255, 255, 255, 0.86);
+
+  --dd-fg: #0f172a;
+  --dd-fg-secondary: #475569;
+  --dd-fg-muted: #64748b;
+
+  --dd-border: rgba(15, 23, 42, 0.10);
+  --dd-border-strong: rgba(15, 23, 42, 0.22);
+
+  --dd-danger: #e11d48;
+  --dd-danger-soft: rgba(225, 29, 72, 0.10);
+  --dd-warning: #d97706;
+  --dd-warning-soft: rgba(217, 119, 6, 0.10);
+  --dd-success: #059669;
+  --dd-success-soft: rgba(5, 150, 105, 0.10);
+
+  --dd-scroll-track: transparent;
+  --dd-scroll-thumb: rgba(15, 23, 42, 0.18);
+  --dd-scroll-thumb-hover: rgba(15, 23, 42, 0.36);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    color-scheme: light;
+    --dd-canvas: #f4f6f9;
+    --dd-surface: #ffffff;
+    --dd-surface-elevated: #f9fafc;
+    --dd-surface-muted: #edf0f5;
+    --dd-glass: rgba(255, 255, 255, 0.86);
+
+    --dd-fg: #0f172a;
+    --dd-fg-secondary: #475569;
+    --dd-fg-muted: #64748b;
+
+    --dd-border: rgba(15, 23, 42, 0.10);
+    --dd-border-strong: rgba(15, 23, 42, 0.22);
+
+    --dd-danger: #e11d48;
+    --dd-danger-soft: rgba(225, 29, 72, 0.10);
+    --dd-warning: #d97706;
+    --dd-warning-soft: rgba(217, 119, 6, 0.10);
+    --dd-success: #059669;
+    --dd-success-soft: rgba(5, 150, 105, 0.10);
+
+    --dd-scroll-track: transparent;
+    --dd-scroll-thumb: rgba(15, 23, 42, 0.18);
+    --dd-scroll-thumb-hover: rgba(15, 23, 42, 0.36);
+  }
+}
+
+/* Accent Presets */
+:root,
+[data-accent="cyan"] {
+  --dd-accent: #06b6d4;
+  --dd-accent-fg: #041318;
+  --dd-accent-soft: rgba(6, 182, 212, 0.14);
+  --dd-accent-border: rgba(6, 182, 212, 0.36);
+}
+[data-theme="alabaster"][data-accent="cyan"] {
+  --dd-accent: #0891b2;
+  --dd-accent-fg: #ffffff;
+  --dd-accent-soft: rgba(8, 145, 178, 0.10);
+  --dd-accent-border: rgba(8, 145, 178, 0.32);
+}
+
+[data-accent="emerald"] {
+  --dd-accent: #10b981;
+  --dd-accent-fg: #041811;
+  --dd-accent-soft: rgba(16, 185, 129, 0.14);
+  --dd-accent-border: rgba(16, 185, 129, 0.36);
+}
+[data-theme="alabaster"][data-accent="emerald"] {
+  --dd-accent: #059669;
+  --dd-accent-fg: #ffffff;
+  --dd-accent-soft: rgba(5, 150, 105, 0.10);
+  --dd-accent-border: rgba(5, 150, 105, 0.32);
+}
+
+[data-accent="amber"] {
+  --dd-accent: #f59e0b;
+  --dd-accent-fg: #1c1002;
+  --dd-accent-soft: rgba(245, 158, 11, 0.14);
+  --dd-accent-border: rgba(245, 158, 11, 0.38);
+}
+[data-theme="alabaster"][data-accent="amber"] {
+  --dd-accent: #d97706;
+  --dd-accent-fg: #ffffff;
+  --dd-accent-soft: rgba(217, 119, 6, 0.10);
+  --dd-accent-border: rgba(217, 119, 6, 0.32);
+}
+
+[data-accent="steel"] {
+  --dd-accent: #cbd5e1;
+  --dd-accent-fg: #090b0f;
+  --dd-accent-soft: rgba(203, 213, 225, 0.14);
+  --dd-accent-border: rgba(203, 213, 225, 0.34);
+}
+[data-theme="alabaster"][data-accent="steel"] {
+  --dd-accent: #334155;
+  --dd-accent-fg: #ffffff;
+  --dd-accent-soft: rgba(51, 65, 85, 0.10);
+  --dd-accent-border: rgba(51, 65, 85, 0.28);
+}
+
+/* UI Density Tokens */
+:root,
+[data-density="comfortable"] {
+  --dd-card-pad: 1rem;
+  --dd-grid-gap: 0.875rem;
+  --dd-radius-card: 0.875rem;
+  --dd-radius-control: 0.625rem;
+}
+
+[data-density="compact"] {
+  --dd-card-pad: 0.6875rem;
+  --dd-grid-gap: 0.5625rem;
+  --dd-radius-card: 0.625rem;
+  --dd-radius-control: 0.5rem;
+}
+
+/* Global High-Contrast Life-Safety Override (CRASH_DETECTED, GAS_LEAK, SMOKE_FIRE, FALL_DETECTED, PANIC_SOS) */
+.life-safety-override,
+[data-life-safety="critical"] {
+  color-scheme: dark !important;
+  --dd-canvas: #140407 !important;
+  --dd-surface: #22070c !important;
+  --dd-surface-elevated: #2e0a11 !important;
+  --dd-surface-muted: #3b0d16 !important;
+  --dd-glass: rgba(34, 7, 12, 0.94) !important;
+  --dd-fg: #ffffff !important;
+  --dd-fg-secondary: #fecdd3 !important;
+  --dd-fg-muted: #fda4af !important;
+  --dd-border: rgba(251, 113, 133, 0.45) !important;
+  --dd-border-strong: rgba(251, 113, 133, 0.85) !important;
+  --dd-accent: #ff2e55 !important;
+  --dd-accent-fg: #ffffff !important;
+  --dd-accent-soft: rgba(255, 46, 85, 0.24) !important;
+  --dd-accent-border: rgba(255, 46, 85, 0.8) !important;
+}
+
+[data-life-safety="critical"] body {
+  box-shadow: inset 0 0 0 2px #ff2e55;
+}
+
+/* Base Reset & Precision Typography */
+html,
+body {
+  background-color: var(--dd-canvas);
+  color: var(--dd-fg);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+}
+
+/* Tabular Numbers for Telemetry, Counters, and Timers */
+.dd-telemetry,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Surface & Hairline Utility Classes */
+.dd-glass {
+  background-color: var(--dd-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dd-card {
+  background-color: var(--dd-surface);
+  border: 1px solid var(--dd-border);
+  border-radius: var(--dd-radius-card);
+  padding: var(--dd-card-pad);
+}
+
+.dd-grid-gap {
+  gap: var(--dd-grid-gap);
+}
+
+/* ============================================================================
+ * Custom Thin Scrollbars (4px–6px, subtle track, rounded thumb, touch smooth)
+ * ============================================================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dd-scroll-thumb) var(--dd-scroll-track);
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--dd-scroll-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--dd-scroll-thumb);
+  border-radius: 9999px;
+  transition: background-color 150ms ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--dd-scroll-thumb-hover);
+}
+
+.dd-scroll {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+/* Safe-area padding helper for mobile bottom nav & sheets */
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Custom Range Input Reset for PrecisionSlider */
+input[type="range"].dd-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"].dd-range:focus {
+  outline: none;
+}
+input[type="range"].dd-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: var(--dd-accent);
+  border: 2px solid var(--dd-surface);
+  box-shadow: 0 0 0 1px var(--dd-accent-border);
+  transition: transform 120ms ease;
+}
+input[type="range"].dd-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+input[type="range"].dd-range::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: var(--dd-accent);
+  border: 2px solid var(--dd-surface);
+  box-shadow: 0 0 0 1px var(--dd-accent-border);
+}

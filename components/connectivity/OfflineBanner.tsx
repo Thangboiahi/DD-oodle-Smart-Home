@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
-import { WifiOff, Wifi, Bluetooth, ArrowRight } from 'lucide-react';
+import React, { useState, useSyncExternalStore } from 'react';
+import { ArrowRight, Bluetooth, Check, Copy, Eye, EyeOff, Wifi, WifiOff } from 'lucide-react';
 import { ActiveTransportTier } from '@/lib/protocol/transports';
 import { OperationMode } from '@/lib/protocol/contract';
+import { cn } from '@/lib/utils';
 
 interface OfflineBannerProps {
   activeTransport: ActiveTransportTier;
   onSelectMode?: (mode: OperationMode) => void;
   selectedDeviceId?: string;
+  localPin?: string;
 }
 
 function subscribe(callback: () => void) {
@@ -33,10 +35,12 @@ export const OfflineBanner: React.FC<OfflineBannerProps> = ({
   activeTransport,
   onSelectMode,
   selectedDeviceId = 'dd_pwr01_a1b2c3',
+  localPin = '48291034',
 }) => {
   const isOnline = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const [revealPin, setRevealPin] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // If online and on cloud, nothing to warn
   if (isOnline && activeTransport === 'CLOUD') {
     return null;
   }
@@ -44,56 +48,75 @@ export const OfflineBanner: React.FC<OfflineBannerProps> = ({
   const slug = selectedDeviceId.toLowerCase().replace(/_/g, '-');
   const localUrl = `http://ddoodle-${slug}.local/`;
 
+  const copyPin = () => {
+    navigator.clipboard.writeText(localPin);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
   return (
     <div
       role="status"
       aria-live="polite"
-      className={`w-full border-b transition-colors ${
+      className={cn(
+        'w-full border-b transition-colors',
         !isOnline
-          ? 'bg-amber-950/40 border-amber-500/30 text-amber-200'
-          : 'bg-sky-950/30 border-sky-500/20 text-sky-200'
-      }`}
+          ? 'bg-warning-soft border-warning/35 text-foreground'
+          : 'bg-accent-soft/60 border-accent-border text-foreground'
+      )}
     >
-      <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2.5">
+      <div className="max-w-[1440px] mx-auto px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2">
           {!isOnline ? (
-            <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <WifiOff className="w-3.5 h-3.5" />
-            </div>
+            <WifiOff className="h-3.5 w-3.5 text-warning shrink-0" />
           ) : (
-            <div className="w-6 h-6 rounded-lg bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-sky-400">
-              <Wifi className="w-3.5 h-3.5" />
-            </div>
+            <Wifi className="h-3.5 w-3.5 text-accent shrink-0" />
           )}
-          <div>
-            <span className="font-semibold">
-              {!isOnline ? 'Offline Mode Active' : `Local Access Active (${activeTransport})`}
-            </span>
-            <span className="opacity-80 ml-2 hidden sm:inline">
-              Core 4-Tier fail-safe control & 2D room switches are 100% operational locally.
-            </span>
-          </div>
+          <span className="font-semibold">
+            {!isOnline ? 'Offline Mode Active' : `Local Transport: ${activeTransport}`}
+          </span>
+          <span className="hidden md:inline text-foreground-secondary">
+            · Core 4-Tier fail-safe control remains 100% operational locally.
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-[11px]">
+        <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+          <button
+            type="button"
+            onClick={() => setRevealPin((r) => !r)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-surface text-foreground-secondary hover:text-foreground cursor-pointer tabular-nums"
+          >
+            {revealPin ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+            <span>PIN: {revealPin ? localPin : '••••••••'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={copyPin}
+            aria-label="Copy local PIN"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-surface text-foreground-secondary hover:text-foreground cursor-pointer"
+          >
+            {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+          </button>
+
           <a
             href={localUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-medium transition"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-accent text-accent-foreground font-semibold hover:brightness-110 transition"
           >
-            <span>Local Portal (Port 80)</span>
-            <ArrowRight className="w-3 h-3" />
+            <span>Open Local Control</span>
+            <ArrowRight className="h-3 w-3" />
           </a>
 
           {onSelectMode && activeTransport !== 'DIRECT_BLE' && (
             <button
               type="button"
               onClick={() => onSelectMode('BLE_ONLY')}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-surface text-foreground-secondary hover:text-foreground cursor-pointer"
             >
-              <Bluetooth className="w-3 h-3 text-amber-400" />
-              <span>BLE Mode</span>
+              <Bluetooth className="h-3 w-3 text-warning" />
+              <span>BLE</span>
             </button>
           )}
         </div>

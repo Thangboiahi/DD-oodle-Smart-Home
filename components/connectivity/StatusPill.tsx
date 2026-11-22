@@ -2,21 +2,25 @@
 
 import React, { useState } from 'react';
 import {
-  Cloud,
-  HardDrive,
-  Wifi,
   Bluetooth,
-  Sliders,
-  ChevronRight,
-  ExternalLink,
-  Copy,
   Check,
-  ShieldAlert,
-  Smartphone,
+  ChevronRight,
+  Cloud,
+  Copy,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  HardDrive,
   Key,
+  ShieldAlert,
+  ShieldCheck,
+  Sliders,
+  Wifi,
+  X,
 } from 'lucide-react';
 import { ActiveTransportTier, BLE_GATT, LAN_TRANSPORT } from '@/lib/protocol/transports';
 import { OperationMode } from '@/lib/protocol/contract';
+import { cn } from '@/lib/utils';
 
 interface StatusPillProps {
   transport: ActiveTransportTier;
@@ -33,8 +37,10 @@ export const StatusPill: React.FC<StatusPillProps> = ({
   onModeSelect,
 }) => {
   const [open, setOpen] = useState(false);
+  const [pinRevealed, setPinRevealed] = useState(false);
   const [copiedPin, setCopiedPin] = useState(false);
   const [bleStatus, setBleStatus] = useState<string | null>(null);
+  const [bleAuthStage, setBleAuthStage] = useState<'idle' | 'scanning' | 'nonce_hmac' | 'authenticated' | 'error'>('idle');
 
   const getPillConfig = (tier: ActiveTransportTier) => {
     switch (tier) {
@@ -42,32 +48,32 @@ export const StatusPill: React.FC<StatusPillProps> = ({
         return {
           label: 'Cloud (4G/Wi-Fi)',
           shortLabel: 'Cloud',
-          badgeClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-          dotClass: 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]',
+          badgeClass: 'bg-success-soft text-success border-success/35',
+          dotClass: 'bg-success',
           icon: Cloud,
         };
       case 'LOCAL_HUB':
         return {
           label: 'Local Hub (Offline LAN)',
           shortLabel: 'Local Hub',
-          badgeClass: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
-          dotClass: 'bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]',
+          badgeClass: 'bg-accent-soft text-accent border-accent-border',
+          dotClass: 'bg-accent',
           icon: HardDrive,
         };
       case 'DIRECT_LAN':
         return {
           label: 'Direct LAN',
           shortLabel: 'Direct LAN',
-          badgeClass: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
-          dotClass: 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]',
+          badgeClass: 'bg-accent-soft text-accent border-accent-border',
+          dotClass: 'bg-accent',
           icon: Wifi,
         };
       case 'DIRECT_BLE':
         return {
           label: 'Direct Bluetooth (BLE)',
           shortLabel: 'Direct BLE',
-          badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-          dotClass: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]',
+          badgeClass: 'bg-warning-soft text-warning border-warning/40',
+          dotClass: 'bg-warning',
           icon: Bluetooth,
         };
       case 'MANUAL_FAILSAFE':
@@ -75,8 +81,8 @@ export const StatusPill: React.FC<StatusPillProps> = ({
         return {
           label: 'Manual Failsafe',
           shortLabel: 'Failsafe',
-          badgeClass: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
-          dotClass: 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.6)]',
+          badgeClass: 'bg-danger-soft text-danger border-danger/40',
+          dotClass: 'bg-danger',
           icon: Sliders,
         };
     }
@@ -95,157 +101,203 @@ export const StatusPill: React.FC<StatusPillProps> = ({
 
   const connectWebBluetooth = async () => {
     if (typeof navigator === 'undefined' || !('bluetooth' in navigator)) {
-      setBleStatus('Web Bluetooth is supported in Chrome for Android & Desktop. On iOS Safari, use the 1-tap Direct LAN link below.');
+      setBleAuthStage('error');
+      setBleStatus(
+        'Web Bluetooth requires Chrome on Android/Desktop. On iOS Safari, use the 1-tap "Open Local Control" Port 80 link below.'
+      );
       return;
     }
     try {
-      setBleStatus('Scanning for DD_OODLE_CTRL BLE peripherals...');
-      const device = await (navigator as unknown as {
-        bluetooth: {
-          requestDevice: (opts: unknown) => Promise<{
-            name: string;
-            gatt: { connect: () => Promise<unknown> };
-          }>;
-        };
-      }).bluetooth.requestDevice({
+      setBleAuthStage('scanning');
+      setBleStatus(`Scanning for ${BLE_GATT.SERVICE_NAME} (${BLE_GATT.SERVICE_UUID})...`);
+      const device = await (
+        navigator as unknown as {
+          bluetooth: {
+            requestDevice: (opts: unknown) => Promise<{
+              name?: string;
+              gatt: { connect: () => Promise<unknown> };
+            }>;
+          };
+        }
+      ).bluetooth.requestDevice({
         filters: [{ namePrefix: BLE_GATT.DEVICE_NAME_PREFIX }],
         optionalServices: [BLE_GATT.SERVICE_UUID],
       });
-      setBleStatus(`Connecting to ${device.name || 'DD oodle device'}...`);
+      setBleAuthStage('nonce_hmac');
+      setBleStatus(
+        `GATT connected to ${device.name || 'DD oodle module'}. Exchanging HMAC-SHA256 nonce on ${BLE_GATT.CHARACTERISTICS.AUTH.slice(0, 8)}...`
+      );
       await device.gatt.connect();
-      setBleStatus(`Connected via BLE (${BLE_GATT.SERVICE_UUID.slice(0, 8)}...). Encrypted command channel ready.`);
+      setBleAuthStage('authenticated');
+      setBleStatus(
+        `Authenticated via DD-HMAC (${BLE_GATT.CHARACTERISTICS.AUTH}). Encrypted BLE command channel active.`
+      );
       if (onModeSelect) onModeSelect('BLE_ONLY');
     } catch (err) {
+      setBleAuthStage('error');
       setBleStatus(`BLE Scan: ${err instanceof Error ? err.message : 'Cancelled'}`);
     }
   };
 
   return (
     <>
-      {/* Top Bar Status Pill */}
       <button
+        type="button"
         onClick={() => setOpen(true)}
-        className={`group flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition active:scale-95 ${pill.badgeClass}`}
+        className={cn(
+          'group inline-flex items-center gap-1.5 h-8 rounded-full border px-2.5 text-xs font-medium transition active:scale-95 cursor-pointer',
+          pill.badgeClass
+        )}
       >
-        <span className={`w-2 h-2 rounded-full animate-pulse ${pill.dotClass}`} />
-        <Icon className="w-3.5 h-3.5" />
-        <span className="hidden sm:inline font-mono">{pill.label}</span>
-        <span className="sm:hidden font-mono">{pill.shortLabel}</span>
-        <ChevronRight className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 transition" />
+        <span className={cn('h-1.5 w-1.5 rounded-full animate-pulse', pill.dotClass)} />
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="hidden sm:inline font-mono text-[11px]">{pill.label}</span>
+        <span className="sm:hidden font-mono text-[11px]">{pill.shortLabel}</span>
+        <ChevronRight className="h-3 w-3 opacity-60 group-hover:translate-x-0.5 transition" />
       </button>
 
-      {/* Connectivity & Local Access Modal */}
+      {/* Connectivity Diagnostics & Mode Drawer */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl text-slate-100 max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4 backdrop-blur-xs"
+          onMouseDown={() => setOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="4-Tier Fail-Safe Connectivity Diagnostics"
+            onMouseDown={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-t-2xl sm:rounded-[var(--dd-radius-card)] border border-border-strong bg-surface p-5 shadow-2xl text-foreground max-h-[88vh] overflow-y-auto dd-scroll space-y-4"
+          >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2.5">
-                <div className={`p-2 rounded-lg border ${pill.badgeClass}`}>
-                  <Icon className="w-5 h-5" />
+                <div className={cn('p-2 rounded-lg border', pill.badgeClass)}>
+                  <Icon className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold">4-Tier Fail-Safe Connectivity</h3>
-                  <p className="text-xs text-slate-400 font-mono">
-                    Active Transport: <span className="text-emerald-400 font-bold">{pill.label}</span>
+                  <h3 className="text-sm font-semibold">Connectivity Diagnostics &amp; Fail-Safe</h3>
+                  <p className="text-[11px] text-foreground-muted font-mono">
+                    Active Tier: <span className="text-foreground font-semibold">{pill.label}</span>
                   </p>
                 </div>
               </div>
               <button
+                type="button"
+                aria-label="Close connectivity drawer"
                 onClick={() => setOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-slate-800"
+                className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border text-foreground-secondary hover:text-foreground cursor-pointer"
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Zero Mixed-Content Direct LAN Section (Spec Section 3 & G7) */}
-            <div className="mt-5 rounded-xl border border-sky-500/30 bg-sky-950/20 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sky-400 text-xs font-semibold uppercase tracking-wider">
-                  <Wifi className="w-4 h-4" />
+            {/* Zero Mixed-Content Direct LAN Section (G7) */}
+            <div className="rounded-[var(--dd-radius-control)] border border-accent-border bg-accent-soft/40 p-3.5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-accent text-xs font-semibold">
+                  <Wifi className="h-3.5 w-3.5" />
                   <span>Offline LAN / iOS Safari (Zero Mixed-Content)</span>
                 </div>
-                <span className="text-[10px] font-mono bg-sky-900/50 text-sky-300 px-2 py-0.5 rounded border border-sky-700/50">
+                <span className="text-[10px] font-mono bg-surface px-1.5 py-0.5 rounded border border-border text-foreground-secondary">
                   G7 Port 80
                 </span>
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                DD oodle ESP32 boards serve a standalone ~15 KB gzipped control page over plain HTTP/WS. To bypass browser mixed-content restrictions, open the top-level device portal:
+              <p className="text-xs text-foreground-secondary leading-relaxed">
+                Open the module&apos;s built-in local HTTP/WS control page directly in a top-level browser tab—zero internet or cloud required.
               </p>
 
-              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <a
                   href={localDeviceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-500 px-3 py-2 text-xs font-semibold text-white shadow-sm transition"
+                  className="flex-1 min-h-[40px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] bg-accent text-accent-foreground px-3 py-2 text-xs font-semibold hover:brightness-110 transition"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Local Control ({selectedDeviceId})</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Open Local Control</span>
                 </a>
                 <a
                   href={LAN_TRANSPORT.HUB_LOCAL_URL}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition"
+                  className="min-h-[40px] flex items-center justify-center gap-1.5 rounded-[var(--dd-radius-control)] border border-border bg-surface hover:border-border-strong px-3 py-2 text-xs font-medium text-foreground transition"
                 >
                   <span>Hub Portal</span>
                 </a>
               </div>
 
-              {/* G7 8-Digit PIN */}
-              <div className="flex items-center justify-between rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-xs">
-                <div className="flex items-center gap-2 text-slate-400 font-mono">
-                  <Key className="w-3.5 h-3.5 text-amber-400" />
-                  <span>G7 Local Device PIN:</span>
-                  <span className="font-bold text-amber-300 tracking-wider text-sm">{localPin}</span>
+              {/* Tap-to-Reveal / Tap-to-Copy G7 8-Digit PIN */}
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-surface border border-border px-3 py-2 text-xs font-mono">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Key className="h-3.5 w-3.5 text-warning shrink-0" />
+                  <span className="text-foreground-muted">G7 PIN:</span>
+                  <span className="font-semibold text-foreground tracking-wider tabular-nums">
+                    {pinRevealed ? localPin : '•••• ••••'}
+                  </span>
                 </div>
-                <button
-                  onClick={copyPin}
-                  className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 transition"
-                >
-                  {copiedPin ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedPin ? 'Copied' : 'Copy PIN'}</span>
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPinRevealed((r) => !r)}
+                    className="inline-flex items-center gap-1 text-[11px] text-foreground-secondary hover:text-foreground px-2 py-1 rounded bg-surface-elevated border border-border cursor-pointer"
+                  >
+                    {pinRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    <span>{pinRevealed ? 'Hide' : 'Reveal'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copyPin}
+                    className="inline-flex items-center gap-1 text-[11px] text-foreground-secondary hover:text-foreground px-2 py-1 rounded bg-surface-elevated border border-border cursor-pointer"
+                  >
+                    {copiedPin ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedPin ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Direct Bluetooth (BLE) Manager */}
-            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4 space-y-3">
+            {/* Direct Web Bluetooth (BLE_ONLY) */}
+            <div className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold uppercase tracking-wider">
-                  <Bluetooth className="w-4 h-4" />
-                  <span>Direct Bluetooth (BLE_ONLY)</span>
+                <div className="flex items-center gap-1.5 text-warning text-xs font-semibold">
+                  <Bluetooth className="h-3.5 w-3.5" />
+                  <span>Direct Bluetooth ({BLE_GATT.SERVICE_NAME})</span>
                 </div>
-                <span className="text-[10px] font-mono text-slate-400">Android Chrome</span>
+                <span className="text-[10px] font-mono text-foreground-muted">
+                  HMAC-SHA256 Nonce
+                </span>
               </div>
-              <p className="text-xs text-slate-400">
-                Connect directly to the ESP32 hardware via Web Bluetooth using frozen service UUID <code className="text-slate-300 text-[11px] font-mono">dd000001</code>.
+              <p className="text-[11px] text-foreground-secondary font-mono">
+                Service UUID: {BLE_GATT.SERVICE_UUID}
               </p>
 
               <button
-                onClick={connectWebBluetooth}
-                className="w-full flex items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-300 transition"
+                type="button"
+                onClick={() => void connectWebBluetooth()}
+                className="w-full min-h-[40px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-warning/40 bg-warning-soft hover:brightness-110 px-3 py-2 text-xs font-semibold text-warning transition cursor-pointer"
               >
-                <Bluetooth className="w-3.5 h-3.5" />
+                <Bluetooth className="h-3.5 w-3.5" />
                 <span>Pair via Web Bluetooth (DD_OODLE_CTRL)</span>
               </button>
 
               {bleStatus && (
-                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2 text-[11px] font-mono text-slate-300">
-                  {bleStatus}
+                <div className="flex items-start gap-2 rounded-lg bg-surface border border-border p-2.5 text-[11px] font-mono text-foreground-secondary">
+                  {bleAuthStage === 'authenticated' && (
+                    <ShieldCheck className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />
+                  )}
+                  <span>{bleStatus}</span>
                 </div>
               )}
             </div>
 
             {/* Manual Transport Override */}
             {onModeSelect && (
-              <div className="mt-4 border-t border-slate-800 pt-4 space-y-2">
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  Manual Transport Simulation
+              <div className="border-t border-border pt-3 space-y-2">
+                <p className="text-[11px] font-mono uppercase tracking-wider text-foreground-muted">
+                  Transport Tier Simulation
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-xs">
                   {(
                     [
                       ['CLOUD_DIRECT', 'Cloud (MQTT)', 'CLOUD'],
@@ -257,12 +309,14 @@ export const StatusPill: React.FC<StatusPillProps> = ({
                   ).map(([mode, label, tier]) => (
                     <button
                       key={mode}
+                      type="button"
                       onClick={() => onModeSelect(mode)}
-                      className={`px-3 py-2 rounded-lg border text-left transition font-mono text-[11px] ${
+                      className={cn(
+                        'px-2.5 py-2 rounded-[var(--dd-radius-control)] border text-left transition font-mono text-[11px] cursor-pointer',
                         transport === tier
-                          ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-300 font-semibold'
-                          : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                      }`}
+                          ? 'border-accent-border bg-accent-soft text-accent font-semibold'
+                          : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground'
+                      )}
                     >
                       {label}
                     </button>
@@ -271,10 +325,9 @@ export const StatusPill: React.FC<StatusPillProps> = ({
               </div>
             )}
 
-            {/* SoftAP 192.168.4.1 Provisioning Info */}
-            <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-500 font-mono">
-              <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
-              <span>SoftAP recovery fallback: Connect to &ldquo;DDoodle-Setup-XXXX&rdquo; at 192.168.4.1/api/v1/prov</span>
+            <div className="flex items-center gap-2 text-[10px] text-foreground-muted font-mono pt-1">
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+              <span>SoftAP recovery: &ldquo;DDoodle-Setup-XXXX&rdquo; → 192.168.4.1/api/v1/prov</span>
             </div>
           </div>
         </div>

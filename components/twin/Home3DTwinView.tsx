@@ -25,7 +25,8 @@ interface Home3DTwinViewProps {
   devices: Record<string, VirtualDeviceInstance>;
   entitlements: ResolvedEntitlements;
   onSendCommand: (deviceId: string, set: Record<string, boolean | number>) => void;
-  onClearPhysicalFault: (deviceId: string) => void;
+  onClearPhysicalFault?: (deviceId: string) => void;
+  onInspectDevice?: (deviceId: string) => void;
 }
 
 // Template Room Blueprint Definitions
@@ -123,7 +124,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
   devices,
   entitlements,
   onSendCommand,
-  onClearPhysicalFault,
+  onInspectDevice,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -705,15 +706,12 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
                       </div>
 
                       {/* Control Actuators */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {selectedDev.state.fault !== null ? (
-                          <button
-                            onClick={() => onClearPhysicalFault(selectedDev.device_id)}
-                            className="px-3 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1 shadow"
-                          >
-                            <KeyRound className="w-3.5 h-3.5" />
-                            <span>Hold Button 3s to Clear</span>
-                          </button>
+                          <span className="px-2.5 py-1 rounded bg-rose-950/80 border border-rose-600/70 text-rose-200 font-mono text-[10px] flex items-center gap-1.5">
+                            <KeyRound className="w-3 h-3 text-rose-400 shrink-0" />
+                            <span>G10 Locked · Hold physical device button 3s to clear</span>
+                          </span>
                         ) : selectedDev.module_code === 'PWR-02' ? (
                           <div className="flex gap-1">
                             {[0, 1, 2, 3, 4].map((spd) => (
@@ -768,6 +766,15 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
                             }`}
                           >
                             {selectedDev.state.state.ch1 ? 'Turn Ch1 OFF' : 'Turn Ch1 ON'}
+                          </button>
+                        )}
+                        {onInspectDevice && (
+                          <button
+                            type="button"
+                            onClick={() => onInspectDevice(selectedDev.device_id)}
+                            className="px-2.5 py-1 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono transition"
+                          >
+                            Inspector →
                           </button>
                         )}
                       </div>

@@ -1,34 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Power,
-  Zap,
-  Gauge,
-  Droplets,
-  AlertTriangle,
-  Lock,
-  Unlock,
-  Sliders,
-  ShieldCheck,
-  RotateCcw,
-  Navigation,
-  Compass,
-  BatteryCharging,
-  Flame,
-  CheckCircle,
-  ExternalLink,
-  Shield,
   Activity,
-  Radio,
+  AlertTriangle,
   Battery,
-  AlertOctagon,
+  ChevronDown,
+  ChevronUp,
+  Droplets,
+  Eye,
+  ExternalLink,
+  Gauge,
   KeyRound,
+  Lock,
+  Radio,
+  Shield,
+  ShieldCheck,
   Signal,
   SignalZero,
+  Unlock,
+  Zap,
 } from 'lucide-react';
 import {
-  DeviceCapability,
   LevelCapability,
   PowerTelemetryPayload,
   ReadOnlySensorCapability,
@@ -37,547 +30,386 @@ import {
   evaluateStarterInterlockSafety,
 } from '@/lib/protocol/contract';
 import { VirtualDeviceInstance } from '@/lib/simulator/types';
-import { simulatorEngine } from '@/lib/simulator/engine';
+import { cn } from '@/lib/utils';
+import {
+  Badge,
+  Button,
+  PrecisionSlider,
+  SegmentedControl,
+  TactileSwitch,
+} from '@/components/ui';
+import { LatchedFaultBanner } from './LatchedFaultBanner';
+import { SensorSparkline } from './SensorSparkline';
+import {
+  AssistedWellnessCapabilityRenderer,
+  SmartLockCapabilityRenderer,
+  VideoStreamCapabilityRenderer,
+} from './Phase23CapabilityRenderers';
 
-interface DynamicCapabilityCardProps {
+export interface DynamicCapabilityCardProps {
   device: VirtualDeviceInstance;
   tariffInr?: number;
+  hasPlusHistory?: boolean;
+  connectedHubMembers?: Array<{ device_id: string; name: string; module_code: string; via?: string }>;
   onSendCommand: (deviceId: string, set: Record<string, boolean | number | string>) => void;
   onTriggerCrash?: () => void;
   onOpenLocalAccess?: (deviceId: string, pin: string) => void;
+  onInspect?: (deviceId: string) => void;
+}
+
+/**
+ * G12 Hard-Enforced Guard: verifies whether a capability key is strictly read-only (`type: "sensor"`).
+ * NEVER emits .../cmd for any read-only sensor key.
+ */
+export function isReadOnlySensorKey(device: VirtualDeviceInstance, key: string): boolean {
+  return device.info.capabilities.some((cap) => cap.key === key && cap.type === 'sensor');
 }
 
 export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
   device,
   tariffInr = 7.5,
+  hasPlusHistory = true,
+  connectedHubMembers = [],
   onSendCommand,
   onTriggerCrash,
   onOpenLocalAccess,
+  onInspect,
 }) => {
-  const [optimisticOverrides, setOptimisticOverrides] = useState<Record<string, boolean | number | string>>({});
+  const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
+  const [ackedKeys, setAckedKeys] = useState<Record<string, boolean>>({});
+  const [optimisticOverrides, setOptimisticOverrides] = useState<
+    Record<string, boolean | number | string>
+  >({});
   const [immobilizerConfirm, setImmobilizerConfirm] = useState(false);
-  const [pinInput, setPinInput] = useState('');
-  const [holdingButton, setHoldingButton] = useState(false);
+  const [hubMembersExpanded, setHubMembersExpanded] = useState(false);
 
-  // Merge confirmed device state with pending optimistic user interactions
-  const optimisticState = { ...device.state.state, ...optimisticOverrides };
+  // HUB-01 G18a: live 180s permit_join countdown
+  const permitJoinActive = Boolean(device.info.permit_join || device.state.state.permit_join);
+  const [permitRemainingSec, setPermitRemainingSec] = useState<number>(
+    device.info.permit_join_timeout_sec ?? 180
+  );
+
+  useEffect(() => {
+    if (!permitJoinActive) return;
+    const handle = window.setInterval(() => {
+      setPermitRemainingSec((sec) => (sec > 0 ? sec - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [permitJoinActive]);
+
+  const effectiveState = useMemo(
+    () => ({ ...device.state.state, ...optimisticOverrides }),
+    [device.state.state, optimisticOverrides]
+  );
+
   const hasLatchedFault = device.state.fault !== null;
 
-  const handleToggle = (key: string) => {
-    if (hasLatchedFault) {
-      alert(`Safety Lock: Cannot turn ON while fault [${device.state.fault}] is active. Requires 3-second physical device button hold to clear.`);
+  const dispatchCommand = (key: string, nextVal: boolean | number | string) => {
+    // G12 Hard Guard: NEVER emit commands targeting a read-only sensor key
+    if (isReadOnlySensorKey(device, key)) return;
+    // G10 Hard Guard: NEVER turn ON loads while a latched fault is active
+    if (hasLatchedFault && (nextVal === true || (typeof nextVal === 'number' && nextVal > 0))) {
       return;
     }
-    const currentVal = Boolean(optimisticState[key]);
-    const nextVal = !currentVal;
+
     setOptimisticOverrides((prev) => ({ ...prev, [key]: nextVal }));
+    setPendingKeys((prev) => ({ ...prev, [key]: true }));
     onSendCommand(device.device_id, { [key]: nextVal });
-  };
 
-  const handleLevelChange = (key: string, val: number) => {
-    if (hasLatchedFault && val > 0) {
-      alert(`Safety Lock: Cannot engage load while fault [${device.state.fault}] is active.`);
-      return;
-    }
-    setOptimisticOverrides((prev) => ({ ...prev, [key]: val }));
-    onSendCommand(device.device_id, { [key]: val });
-  };
-
-  const handleStarterLockClick = () => {
-    const isCurrentlyEngaged = device.state.immobilize === 'ENGAGED' || device.state.immobilize === 'PENDING';
-    if (isCurrentlyEngaged) {
-      // Release starter
-      onSendCommand(device.device_id, { immobilize: false });
-      return;
-    }
-    // Require confirmation before cutting starter
-    setImmobilizerConfirm(true);
-  };
-
-  const confirmImmobilize = () => {
-    onSendCommand(device.device_id, { immobilize: true });
-    setImmobilizerConfirm(false);
-    setPinInput('');
-  };
-
-  const simulatePhysicalButtonClear = () => {
-    setHoldingButton(true);
-    setTimeout(() => {
-      simulatorEngine.clearPhysicalFault(device.device_id);
-      setHoldingButton(false);
-    }, 1000);
+    window.setTimeout(() => {
+      setPendingKeys((prev) => ({ ...prev, [key]: false }));
+      setAckedKeys((prev) => ({ ...prev, [key]: true }));
+      setOptimisticOverrides((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      window.setTimeout(() => {
+        setAckedKeys((prev) => ({ ...prev, [key]: false }));
+      }, 1800);
+    }, 260);
   };
 
   // Telemetry casts
-  const powerTel = (device.module_code.startsWith('PWR') ? device.telemetry : null) as PowerTelemetryPayload | null;
-  const waterTel = (device.module_code === 'WAT-01' ? device.telemetry : null) as WaterTelemetryPayload | null;
-  const vehTel = (device.module_code === 'VEH-01' ? device.telemetry : null) as VehicleTelemetryPayload | null;
+  const powerTel = (
+    device.module_code.startsWith('PWR') ? device.telemetry : null
+  ) as PowerTelemetryPayload | null;
+  const waterTel = (
+    device.module_code === 'WAT-01' ? device.telemetry : null
+  ) as WaterTelemetryPayload | null;
+  const vehTel = (
+    device.module_code === 'VEH-01' ? device.telemetry : null
+  ) as VehicleTelemetryPayload | null;
 
-  // G9: Calculate cost from cumulative NVS kWh
+  // G9: Power metrics & INR cost derived from cumulative NVS kWh
+  const watts = powerTel?.p ?? 0;
+  const volts = powerTel?.v ?? 230;
+  const amps = powerTel?.i ?? 0;
+  const pf = powerTel?.pf ?? 0.96;
   const cumulativeKwh = powerTel?.kwh ?? 0;
-  const totalCostInr = (cumulativeKwh * tariffInr).toFixed(2);
+  const dailyDeltaKwh = Number((cumulativeKwh * 0.14).toFixed(2));
+  const monthlyProjectedKwh = Number((dailyDeltaKwh * 30).toFixed(1));
+  const dailyCostInr = (dailyDeltaKwh * tariffInr).toFixed(2);
+  const monthlyCostInr = (monthlyProjectedKwh * tariffInr).toFixed(0);
+  const maxLoadWatts = device.module_code === 'PWR-03' ? 5500 : 2500;
+  const wattGaugePct = Math.min(100, Math.round((watts / maxLoadWatts) * 100));
+
+  // WAT-01 G11 telemetry
+  const tankLinkLost = waterTel?.tank_link === false;
+  const showTankBattery = waterTel !== null && waterTel.tank_batt_pct !== null && typeof waterTel.tank_batt_pct === 'number';
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border p-5 shadow-lg backdrop-blur-sm transition-all space-y-4 ${
-      hasLatchedFault
-        ? 'border-rose-600/60 bg-slate-900/90 ring-1 ring-rose-500/30'
-        : 'border-slate-800 bg-slate-900/80 hover:border-slate-700'
-    }`}>
-      {/* Card Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-              {device.module_code}
-            </span>
-            <span className="text-[11px] font-mono text-slate-500">
-              RSSI: {device.state.rssi} dBm
-            </span>
-            {device.state.manual_override && (
-              <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 border border-amber-700/50 px-1.5 py-0.2 rounded">
-                Wall Switch
-              </span>
+    <article
+      className={cn(
+        'rounded-[var(--dd-radius-card)] border bg-surface p-[var(--dd-card-pad)] transition-colors space-y-3',
+        hasLatchedFault
+          ? 'border-danger/70 ring-1 ring-danger/25'
+          : 'border-border hover:border-border-strong'
+      )}
+    >
+      {/* Header Row */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge variant="accent">{device.module_code}</Badge>
+            <Badge variant="mono" className="text-[10px]">
+              {device.state.rssi} dBm
+            </Badge>
+            {device.state.ack && (
+              <Badge variant="success" className="text-[10px]">
+                ACK
+              </Badge>
             )}
             {device.state.via === 'ble_proxy' && (
-              <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/60 border border-indigo-700/50 px-1.5 py-0.2 rounded">
+              <Badge variant="warning" className="text-[10px]">
                 BLE Proxy
-              </span>
+              </Badge>
             )}
           </div>
-          <h3 className="mt-1 text-base font-semibold text-slate-100">{device.name}</h3>
+          <h3 className="mt-1.5 text-sm font-semibold tracking-tight text-foreground truncate">
+            {device.name}
+          </h3>
         </div>
 
-        {/* Local Access Quick Link with PIN display (G7) */}
-        <button
-          onClick={() => onOpenLocalAccess?.(device.device_id, device.local_pin)}
-          title={`G7 Local Device PIN: ${device.local_pin}`}
-          className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/60 px-2 py-1 text-[11px] font-mono text-slate-400 hover:text-white hover:border-slate-700 transition"
-        >
-          <span>PIN: {device.local_pin}</span>
-          <ExternalLink className="w-3 h-3 text-slate-400" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {onInspect && (
+            <button
+              type="button"
+              onClick={() => onInspect(device.device_id)}
+              title="Open Quick Inspector"
+              aria-label={`Inspect ${device.name}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-surface-elevated text-foreground-secondary hover:text-accent hover:border-accent-border transition-colors cursor-pointer"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onOpenLocalAccess && (
+            <button
+              type="button"
+              onClick={() => onOpenLocalAccess(device.device_id, device.local_pin)}
+              title="Local LAN Access & G7 PIN"
+              aria-label={`Local access for ${device.name}`}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 text-[11px] font-mono text-foreground-secondary hover:text-foreground hover:border-border-strong transition-colors cursor-pointer"
+            >
+              <KeyRound className="h-3 w-3" />
+              <span className="hidden sm:inline">LAN</span>
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* G10: LATCHED FAULT BANNER */}
-      {hasLatchedFault && (
-        <div className="rounded-xl border border-rose-500/60 bg-rose-950/40 p-3.5 space-y-2.5 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between text-rose-300">
-            <span className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider">
-              <AlertOctagon className="w-4 h-4 text-rose-400 animate-pulse" />
-              <span>Latched Fault: {device.state.fault}</span>
-            </span>
-            <span className="text-[10px] font-mono bg-rose-900/60 text-rose-200 px-2 py-0.5 rounded border border-rose-700/50">
-              G10 LOCKED
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-300 leading-relaxed">
-            Hardware cutoff engaged. All load-ON actuation is strictly locked. Clearing requires a <strong>3-second physical device button hold</strong> (no remote clearing allowed by safety spec).
-          </p>
+      {/* G10: Global Latched Fault Lock Banner (NO remote clear button) */}
+      <LatchedFaultBanner fault={device.state.fault} moduleCode={device.module_code} />
 
-          <button
-            onClick={simulatePhysicalButtonClear}
-            disabled={holdingButton}
-            className="w-full py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold font-mono uppercase tracking-wider transition shadow flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 ${holdingButton ? 'animate-spin' : ''}`} />
-            <span>{holdingButton ? 'Holding Physical Button (3 s)...' : 'Simulate 3s Physical Button Hold to Clear'}</span>
-          </button>
+      {/* G11: WAT-01 Tank Link Lost Warning Banner */}
+      {tankLinkLost && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-[var(--dd-radius-control)] border border-warning/50 bg-warning-soft px-3 py-2 text-xs text-foreground"
+        >
+          <SignalZero className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+          <div>
+            <div className="font-semibold text-warning font-mono text-[11px]">
+              TANK_LINK_LOST (G11)
+            </div>
+            <div className="text-[11px] text-foreground-secondary">
+              Overhead tank sensor link offline. Automatic top-off paused to prevent overflow.
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Safety Guardrails Badge */}
+      {/* Guardrail Badges */}
       {device.config.guardrails && (
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+        <div className="flex flex-wrap items-center gap-1.5">
           {device.config.guardrails.hard_locked && (
-            <span className="flex items-center gap-1 text-emerald-400 bg-emerald-950/50 border border-emerald-800/40 px-2 py-0.5 rounded-full">
-              <ShieldCheck className="w-3 h-3" />
-              <span>Hard-Locked Guardrails</span>
-            </span>
+            <Badge variant="success">
+              <ShieldCheck className="h-3 w-3" />
+              <span>Hard-Locked Ceiling</span>
+            </Badge>
           )}
           {device.config.guardrails.max_runtime_min && (
-            <span className="text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded-full">
-              Ceiling: {device.config.guardrails.max_runtime_min}m Auto-Cutoff
-            </span>
+            <Badge variant="mono">Max {device.config.guardrails.max_runtime_min}m</Badge>
           )}
           {device.config.guardrails.dry_run_timeout_sec && (
-            <span className="text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded-full">
-              Dry-Run: {device.config.guardrails.dry_run_timeout_sec}s
-            </span>
+            <Badge variant="mono">Dry-Run {device.config.guardrails.dry_run_timeout_sec}s</Badge>
           )}
         </div>
       )}
 
-      {/* DYNAMIC CAPABILITIES SECTION */}
-      <div className="space-y-3 pt-1">
+      {/* Dynamic Capability Controls (strictly bound to device.info.capabilities[]) */}
+      <div className="space-y-2.5">
         {device.info.capabilities.map((cap) => {
-          // 1. SWITCH / RELAY
+          // 1. SWITCH / PUMP_SWITCH (including HUB-01 permit_join)
           if (cap.type === 'switch' || cap.type === 'pump_switch') {
-            const isOn = Boolean(optimisticState[cap.key]);
-            return (
-              <div
-                key={cap.key}
-                className="flex items-center justify-between rounded-xl bg-slate-950/60 border border-slate-800/80 p-3"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
-                      isOn
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                        : 'bg-slate-800 text-slate-500 border border-slate-700'
-                    }`}
-                  >
-                    <Power className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-medium text-slate-200 block">{cap.label}</span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {hasLatchedFault
-                        ? 'Locked by Fault'
-                        : isOn
-                        ? 'Active (Relay ON)'
-                        : 'Standby (Relay OFF)'}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleToggle(cap.key)}
-                  disabled={hasLatchedFault && !isOn}
-                  className={`w-12 h-6 rounded-full transition-colors relative focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
-                    isOn ? 'bg-emerald-500' : 'bg-slate-700'
-                  }`}
-                >
-                  <span
-                    className={`block w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${
-                      isOn ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-            );
-          }
-
-          // 2. LEVEL (Fan speed stepped buttons or Dimmer slider)
-          if (cap.type === 'level') {
-            const levelCap = cap as LevelCapability;
-            const currentVal = Number(optimisticState[cap.key] ?? 0);
-            const isSteppedFan = (levelCap.max ?? 100) <= 5;
-
-            if (isSteppedFan) {
-              const speeds = Array.from({ length: levelCap.max - levelCap.min + 1 }, (_, i) => i + levelCap.min);
-              return (
-                <div key={cap.key} className="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-medium text-slate-200">{cap.label}</span>
-                    <span className="font-mono text-emerald-400 font-bold">
-                      {currentVal === 0 ? 'OFF' : `Speed ${currentVal}`}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1">
-                    {speeds.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => handleLevelChange(cap.key, s)}
-                        disabled={hasLatchedFault && s > 0}
-                        className={`py-1.5 rounded-lg text-xs font-mono font-bold transition disabled:opacity-40 disabled:cursor-not-allowed ${
-                          currentVal === s
-                            ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
-                        }`}
-                      >
-                        {s === 0 ? '0' : s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            }
+            const checked = Boolean(effectiveState[cap.key]);
+            const isPermitJoin = device.module_code === 'HUB-01' && cap.key === 'permit_join';
 
             return (
-              <div key={cap.key} className="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-medium text-slate-200">{cap.label}</span>
-                  <span className="font-mono text-emerald-400 font-bold">{currentVal}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={levelCap.min}
-                  max={levelCap.max}
-                  step={levelCap.step ?? 1}
-                  value={currentVal}
-                  onChange={(e) => handleLevelChange(cap.key, Number(e.target.value))}
-                  disabled={hasLatchedFault}
-                  className="w-full accent-emerald-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer disabled:opacity-40"
+              <div key={cap.key} className="space-y-1.5">
+                <TactileSwitch
+                  label={cap.label}
+                  sublabel={
+                    isPermitJoin && checked
+                      ? `Pairing window closes in ${permitRemainingSec}s (G18a)`
+                      : hasLatchedFault
+                      ? 'G10 Locked · Physical Reset Required'
+                      : `${cap.key} · ${checked ? 'ON' : 'OFF'}`
+                  }
+                  checked={checked}
+                  pending={Boolean(pendingKeys[cap.key])}
+                  acked={Boolean(ackedKeys[cap.key])}
+                  manualOverride={Boolean(device.state.manual_override)}
+                  locked={hasLatchedFault && !checked}
+                  onChange={(next) => {
+                    if (isPermitJoin && next) setPermitRemainingSec(180);
+                    dispatchCommand(cap.key, next);
+                  }}
                 />
               </div>
             );
           }
 
-          // 3. G12: STRICTLY READ-ONLY SENSOR CAPABILITY
-          if (cap.type === 'sensor') {
-            const sensorCap = cap as ReadOnlySensorCapability;
-            // Lookup sensor value from telemetry or state
-            let val = (device.telemetry as Record<string, unknown>)[cap.key];
-            if (val === undefined || val === null) {
-              val = optimisticState[cap.key];
+          // 2. LEVEL (G6: Stepped buttons for fan_speed 0-4, PrecisionSlider for 0-100%)
+          if (cap.type === 'level') {
+            const levelCap = cap as LevelCapability;
+            const currentVal = Number(effectiveState[cap.key] ?? 0);
+            const isStepped = (levelCap.max ?? 100) <= 5;
+
+            if (isStepped) {
+              const steps = Array.from(
+                { length: levelCap.max - levelCap.min + 1 },
+                (_, i) => levelCap.min + i
+              );
+              return (
+                <div
+                  key={cap.key}
+                  className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-2.5 space-y-2"
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-foreground">{cap.label}</span>
+                    <span className="font-mono text-accent font-semibold tabular-nums">
+                      {currentVal === 0 ? 'OFF' : `Speed ${currentVal}`}
+                    </span>
+                  </div>
+                  <SegmentedControl
+                    fullWidth
+                    size="sm"
+                    ariaLabel={cap.label}
+                    value={currentVal}
+                    onChange={(next) => dispatchCommand(cap.key, next)}
+                    options={steps.map((s) => ({
+                      value: s,
+                      label: s === 0 ? 'OFF' : String(s),
+                      disabled: hasLatchedFault && s > 0,
+                    }))}
+                  />
+                </div>
+              );
             }
-            const displayVal = typeof val === 'number' ? val.toFixed(1) : String(val ?? '--');
 
             return (
               <div
                 key={cap.key}
-                className="flex items-center justify-between rounded-xl bg-slate-950/40 border border-slate-800/60 px-3 py-2 text-xs"
+                className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3"
               >
-                <div className="flex items-center gap-2">
-                  <Activity className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-slate-300 font-medium">{cap.label}</span>
-                </div>
-                <div className="flex items-baseline gap-1 font-mono">
-                  <span className="font-bold text-slate-100">{displayVal}</span>
-                  <span className="text-[10px] text-slate-400">{sensorCap.unit}</span>
-                </div>
+                <PrecisionSlider
+                  label={cap.label}
+                  value={currentVal}
+                  min={levelCap.min}
+                  max={levelCap.max}
+                  step={levelCap.step ?? 1}
+                  unit={cap.unit ?? '%'}
+                  disabled={hasLatchedFault}
+                  onChange={(next) => dispatchCommand(cap.key, next)}
+                />
               </div>
             );
           }
 
-          // 4. G11: WATER LEVEL & TANK TELEMETRY (WAT-01)
-          if (cap.type === 'water_level_pct') {
-            const level = waterTel?.level_pct ?? 0;
-            const levelCm = waterTel?.level_cm ?? 0;
-            const flow = waterTel?.flow_lpm ?? 0;
-            const linkOk = waterTel?.tank_link !== false;
-            const battPct = waterTel?.tank_batt_pct;
+          // 3. G12 STRICTLY READ-ONLY SENSOR CAPABILITY
+          if (cap.type === 'sensor') {
+            const sensorCap = cap as ReadOnlySensorCapability;
+            const telVal = (device.telemetry as unknown as Record<string, unknown>)[cap.key];
+            const stateVal = device.state.state[cap.key];
+            const rawVal =
+              telVal !== undefined
+                ? telVal
+                : stateVal !== undefined
+                ? stateVal
+                : cap.key === 'local_clients'
+                ? device.info.local_clients
+                : null;
 
             return (
-              <div key={cap.key} className="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3 space-y-3">
-                <div className="flex justify-between items-center text-xs">
-                  <div className="flex items-center gap-1.5 text-sky-400 font-medium">
-                    <Droplets className="w-4 h-4" />
-                    <span>{cap.label}</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="text-base font-bold text-sky-300">{level}%</span>
-                    <span className="text-xs text-slate-400 font-normal">({levelCm} cm)</span>
-                  </div>
-                </div>
-
-                {/* Animated Tank Indicator */}
-                <div className="w-full h-4 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      level < 20 ? 'bg-rose-500' : level < 40 ? 'bg-amber-500' : 'bg-sky-500'
-                    }`}
-                    style={{ width: `${Math.min(100, Math.max(0, level))}%` }}
-                  />
-                </div>
-
-                {/* Sub-GHz Tank Link & Battery Row (G11) */}
-                <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-800/60">
-                  <div className="flex items-center gap-2">
-                    {/* Link Status */}
-                    {linkOk ? (
-                      <span className="text-emerald-400 flex items-center gap-1">
-                        <Signal className="w-3.5 h-3.5" />
-                        <span>Link: {waterTel?.tank_rssi ?? -68} dBm</span>
-                      </span>
-                    ) : (
-                      <span className="text-rose-400 font-bold flex items-center gap-1 bg-rose-950/60 px-1.5 py-0.5 rounded">
-                        <SignalZero className="w-3.5 h-3.5" />
-                        <span>TANK LINK LOST</span>
-                      </span>
-                    )}
-
-                    {/* G11: Hide battery badge when tank_batt_pct === null */}
-                    {battPct !== null && battPct !== undefined && (
-                      <span className="flex items-center gap-1 text-slate-300">
-                        <Battery className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{battPct}%</span>
-                      </span>
-                    )}
-                  </div>
-
-                  <span>Flow: {flow > 0 ? `${flow.toFixed(1)} L/min` : '0 L/min'}</span>
-                </div>
-              </div>
+              <SensorSparkline
+                key={cap.key}
+                label={sensorCap.label}
+                sensorKey={sensorCap.key}
+                value={rawVal as number | string | null}
+                unit={sensorCap.unit}
+                min={sensorCap.min}
+                max={sensorCap.max}
+                hasPlusHistory={hasPlusHistory}
+              />
             );
           }
 
-          // 5. G13–G15: VEHICLE SAFETY & STARTER INTERLOCK (VEH-01)
-          if (cap.type === 'gps_track') {
-            if (!vehTel) return null;
-            const starterState = device.state.immobilize ?? 'RELEASED';
-            const starterReason = device.state.immobilize_reason;
-
+          // 4. Phase 2/3 Registry Readiness: Smart Lock
+          if (cap.type === 'lock_state') {
+            const isLocked = effectiveState[cap.key] !== false && effectiveState[cap.key] !== 'UNLOCKED';
             return (
-              <div key={cap.key} className="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3 space-y-3">
-                {/* HUD Strip */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
-                    <span className="text-[10px] text-slate-400 block font-mono">SPEED</span>
-                    <span className="text-base font-bold font-mono text-slate-100">
-                      {vehTel.speed_kmh.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">km/h</span>
-                    </span>
-                  </div>
-                  <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
-                    <span className="text-[10px] text-slate-400 block font-mono">IGNITION</span>
-                    <span
-                      className={`text-xs font-bold font-mono block mt-1 ${
-                        vehTel.ignition ? 'text-emerald-400' : 'text-slate-500'
-                      }`}
-                    >
-                      {vehTel.ignition ? 'ON' : 'OFF'}
-                    </span>
-                  </div>
-                  <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
-                    <span className="text-[10px] text-slate-400 block font-mono">BATTERY</span>
-                    <span className="text-xs font-bold font-mono text-slate-200 block mt-1">
-                      {vehTel.bat_pct}% ({vehTel.ext_v}V)
-                    </span>
-                  </div>
-                </div>
-
-                {/* GPS Coordinates */}
-                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800/60">
-                  <span className="flex items-center gap-1 text-slate-300">
-                    <Navigation className="w-3.5 h-3.5 text-sky-400" />
-                    <span>NH-2 Live GPS:</span>
-                  </span>
-                  <span>{vehTel.lat.toFixed(4)}°N, {vehTel.lng.toFixed(4)}°E</span>
-                </div>
-
-                {/* G15: Starter Solenoid Interlock Button & State */}
-                <div className="pt-1 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-300">Starter Solenoid Interlock:</span>
-                    <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                        starterState === 'ENGAGED'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                          : starterState === 'PENDING'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
-                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      }`}
-                    >
-                      {starterState}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={handleStarterLockClick}
-                    className={`w-full py-2 px-3 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center justify-center gap-2 transition ${
-                      starterState === 'ENGAGED' || starterState === 'PENDING'
-                        ? 'bg-rose-600 hover:bg-rose-500 text-white'
-                        : 'bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-900/40'
-                    }`}
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>{starterState === 'ENGAGED' ? 'Release Starter Lock' : starterState === 'PENDING' ? 'Cancel Pending Lock' : 'Engage Starter Cut'}</span>
-                  </button>
-
-                  {starterReason && (
-                    <p className="text-[10px] text-amber-300 leading-tight font-mono bg-slate-950 p-2 rounded border border-slate-800">
-                      {starterReason}
-                    </p>
-                  )}
-                </div>
-
-                {/* Crash SOS Simulator Trigger Button */}
-                {onTriggerCrash && (
-                  <button
-                    onClick={onTriggerCrash}
-                    className="w-full py-1.5 rounded-lg border border-rose-700/50 bg-rose-950/40 hover:bg-rose-900/40 text-rose-300 text-[11px] font-medium transition flex items-center justify-center gap-1.5"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Simulate 6.4G Crash SOS Event</span>
-                  </button>
-                )}
-
-                {/* Starter Lock PIN Confirmation Dialog */}
-                {immobilizerConfirm && (
-                  <div className="rounded-lg border border-rose-600/70 bg-rose-950/80 p-3 space-y-2 mt-2">
-                    <p className="text-xs font-semibold text-rose-200">
-                      Confirm Remote Starter Solenoid Cut:
-                    </p>
-                    <p className="text-[11px] text-slate-300">
-                      Starter circuit will be severed. Starter cut engages safely when vehicle is stationary (&lt;5 km/h) &amp; ignition is OFF. Enter Device PIN to authorize:
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        placeholder="8-digit PIN"
-                        value={pinInput}
-                        onChange={(e) => setPinInput(e.target.value)}
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs font-mono text-white"
-                      />
-                      <button
-                        onClick={confirmImmobilize}
-                        disabled={pinInput.length < 4}
-                        className="bg-rose-600 hover:bg-rose-500 text-white px-3 py-1 rounded text-xs font-semibold disabled:opacity-50"
-                      >
-                        Authorize
-                      </button>
-                      <button
-                        onClick={() => setImmobilizerConfirm(false)}
-                        className="bg-slate-800 text-slate-300 px-2 py-1 rounded text-xs"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <SmartLockCapabilityRenderer
+                key={cap.key}
+                label={cap.label}
+                locked={isLocked}
+                disabled={hasLatchedFault}
+                onUnlockToggle={(nextLocked) => dispatchCommand(cap.key, nextLocked)}
+              />
             );
           }
 
-          // 6. G18: LOCAL HUB STATUS (HUB-01)
-          if (cap.type === 'hub_status') {
-            const hubTel = device.telemetry as {
-              connected_devices?: number;
-              lan_clients?: number;
-              cloud_uplink?: boolean;
-              local_ip?: string;
-              broker_rx_rate?: number;
-              broker_tx_rate?: number;
-            };
-            const permitJoin = device.info.permit_join ?? false;
-            const permitTimeout = device.info.permit_join_timeout_sec ?? 0;
-
+          // 5. Phase 2/3 Registry Readiness: Video Stream
+          if (cap.type === 'video_stream') {
             return (
-              <div key={cap.key} className="rounded-xl bg-slate-950/60 border border-slate-800/80 p-3 space-y-2.5">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-medium text-slate-200">{cap.label}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => simulatorEngine.togglePermitJoin()}
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded transition ${
-                        permitJoin
-                          ? 'bg-amber-500 text-slate-950 font-bold animate-pulse'
-                          : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {permitJoin ? `Pairing (${permitTimeout}s)` : 'Permit Join'}
-                    </button>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded">
-                      Broker :1883
-                    </span>
-                  </div>
-                </div>
+              <VideoStreamCapabilityRenderer
+                key={cap.key}
+                label={cap.label}
+                deviceId={device.device_id}
+              />
+            );
+          }
 
-                <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono pt-1">
-                  <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">DEVICES</span>
-                    <span className="font-bold text-slate-200">{hubTel?.connected_devices ?? 5}</span>
-                  </div>
-                  <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">LAN CLIENTS</span>
-                    <span className="font-bold text-slate-200">{hubTel?.lan_clients ?? 2}</span>
-                  </div>
-                  <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">LOCAL IP</span>
-                    <span className="font-bold text-slate-200 text-[10px]">{hubTel?.local_ip ?? '192.168.1.50'}</span>
-                  </div>
-                </div>
-              </div>
+          // 6. Phase 2/3 Registry Readiness: Assisted Wellness (with mandatory non-medical disclaimer)
+          if (cap.type === 'vitals' || cap.type === 'fall_alert' || cap.type === 'pill_dispenser') {
+            return (
+              <AssistedWellnessCapabilityRenderer
+                key={cap.key}
+                type={cap.type}
+                label={cap.label}
+                statusValue={effectiveState[cap.key]}
+              />
             );
           }
 
@@ -585,19 +417,255 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
         })}
       </div>
 
-      {/* G9: Power Metering Footer (V, I, P, PF, and Cumulative NVS kWh) */}
+      {/* PWR-01 / PWR-02 / PWR-03 Telemetry & G9 Energy/INR Calculator */}
       {powerTel && (
-        <div className="mt-2 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-400">
-          <div className="flex items-center gap-1.5 text-amber-400">
-            <Zap className="w-3.5 h-3.5" />
-            <span className="font-bold text-slate-200">{(powerTel.p ?? 0).toFixed(1)} W</span>
+        <div className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="inline-flex items-center gap-1.5 font-medium text-foreground-secondary">
+              <Zap className="h-3.5 w-3.5 text-accent" />
+              <span>Live Power Meter</span>
+            </span>
+            <span className="font-mono font-semibold text-foreground tabular-nums">
+              {watts.toFixed(0)} W
+            </span>
           </div>
-          <div>{(powerTel.v ?? 230).toFixed(0)} V ({(powerTel.i ?? 0).toFixed(2)} A)</div>
-          <div className="text-emerald-400 font-semibold" title={`Cumulative NVS: ${(powerTel.kwh ?? 0).toFixed(2)} kWh`}>
-            {(powerTel.kwh ?? 0).toFixed(2)} kWh (₹{totalCostInr})
+
+          {/* Wattage Gauge Bar */}
+          <div className="h-1.5 w-full rounded-full bg-surface-muted overflow-hidden">
+            <div
+              className={cn(
+                'h-full transition-[width] duration-300',
+                wattGaugePct > 85 ? 'bg-danger' : wattGaugePct > 65 ? 'bg-warning' : 'bg-accent'
+              )}
+              style={{ width: `${wattGaugePct}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5 text-[11px] font-mono tabular-nums">
+            <div className="rounded bg-surface border border-border/70 px-2 py-1">
+              <span className="text-foreground-muted block text-[9px]">VOLTS</span>
+              <span className="text-foreground font-semibold">{volts.toFixed(1)} V</span>
+            </div>
+            <div className="rounded bg-surface border border-border/70 px-2 py-1">
+              <span className="text-foreground-muted block text-[9px]">CURRENT</span>
+              <span className="text-foreground font-semibold">{amps.toFixed(2)} A</span>
+            </div>
+            <div className="rounded bg-surface border border-border/70 px-2 py-1">
+              <span className="text-foreground-muted block text-[9px]">PF</span>
+              <span className="text-foreground font-semibold">{pf.toFixed(2)}</span>
+            </div>
+          </div>
+
+          {/* G9 Cumulative NVS kWh + Daily/Monthly INR */}
+          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-border/60 text-[10px] font-mono tabular-nums text-foreground-secondary">
+            <span>
+              Today: <strong className="text-foreground">{dailyDeltaKwh} kWh</strong> (₹{dailyCostInr})
+            </span>
+            <span>
+              Est/Mo: <strong className="text-foreground">₹{monthlyCostInr}</strong>
+            </span>
           </div>
         </div>
       )}
-    </div>
+
+      {/* WAT-01 Telemetry (G11: hide battery if tank_batt_pct === null) */}
+      {waterTel && (
+        <div className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 space-y-2.5">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 font-medium text-foreground-secondary">
+              <Droplets className="h-3.5 w-3.5 text-accent" />
+              <span>Overhead Tank</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              {typeof waterTel.tank_rssi === 'number' && (
+                <Badge variant={waterTel.tank_rssi > -75 ? 'success' : 'warning'}>
+                  <Signal className="h-2.5 w-2.5" />
+                  <span>{waterTel.tank_rssi} dBm</span>
+                </Badge>
+              )}
+              {showTankBattery && (
+                <Badge variant={(waterTel.tank_batt_pct ?? 100) < 25 ? 'danger' : 'mono'}>
+                  <Battery className="h-2.5 w-2.5" />
+                  <span>{waterTel.tank_batt_pct}%</span>
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Level Gauge */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs font-mono tabular-nums">
+              <span className="text-foreground font-semibold">{waterTel.level_pct}% Full</span>
+              <span className="text-foreground-muted">
+                Flow: {(waterTel.flow_lpm ?? 0).toFixed(1)} L/min
+              </span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-surface-muted overflow-hidden">
+              <div
+                className="h-full bg-accent transition-[width] duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, waterTel.level_pct))}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HUB-01 (G18a–d): Connected Members & Local Routing */}
+      {device.module_code === 'HUB-01' && (
+        <div className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setHubMembersExpanded((e) => !e)}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-foreground hover:bg-surface-muted/50 cursor-pointer"
+          >
+            <span className="inline-flex items-center gap-1.5 font-medium">
+              <Radio className="h-3.5 w-3.5 text-accent" />
+              <span>Hub Members & BLE Proxy ({connectedHubMembers.length || device.info.local_clients || 0})</span>
+            </span>
+            {hubMembersExpanded ? (
+              <ChevronUp className="h-3.5 w-3.5 text-foreground-muted" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 text-foreground-muted" />
+            )}
+          </button>
+
+          {hubMembersExpanded && (
+            <div className="border-t border-border/70 p-2.5 space-y-1.5 bg-surface text-[11px] font-mono">
+              <div className="text-[10px] text-foreground-muted">
+                LAN API: <span className="text-foreground">GET /api/v1/devices</span> · WS target key:{' '}
+                <span className="text-accent">&quot;d&quot;</span>
+              </div>
+              {connectedHubMembers.length === 0 ? (
+                <div className="text-foreground-muted">Local LAN broker standing by.</div>
+              ) : (
+                connectedHubMembers.map((m) => (
+                  <div
+                    key={m.device_id}
+                    className="flex items-center justify-between rounded border border-border/70 bg-surface-elevated px-2 py-1"
+                  >
+                    <span className="truncate text-foreground">{m.name}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge variant="mono" className="text-[9px]">
+                        {m.module_code}
+                      </Badge>
+                      {m.via === 'ble_proxy' && (
+                        <Badge variant="warning" className="text-[9px]">
+                          BLE
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VEH-01 Telemetry, G15/G16 Starter Interlock & Crash SOS */}
+      {vehTel && (
+        <div className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 space-y-2.5">
+          <div className="grid grid-cols-3 gap-1.5 text-[11px] font-mono tabular-nums">
+            <div className="rounded bg-surface border border-border/70 px-2 py-1">
+              <span className="text-foreground-muted block text-[9px]">SPEED</span>
+              <span className="text-foreground font-semibold">{vehTel.speed_kmh.toFixed(0)} km/h</span>
+            </div>
+            <div className="rounded bg-surface border border-border/70 px-2 py-1">
+              <span className="text-foreground-muted block text-[9px]">BATTERY</span>
+              <span className="text-foreground font-semibold">{vehTel.ext_v.toFixed(1)} V</span>
+            </div>
+            <div className="rounded bg-surface border border-border/70 px-2 py-1">
+              <span className="text-foreground-muted block text-[9px]">IGNITION</span>
+              <span className="text-foreground font-semibold">{vehTel.ignition ? 'ON' : 'OFF'}</span>
+            </div>
+          </div>
+
+          {(() => {
+            const safety = evaluateStarterInterlockSafety(vehTel.speed_kmh, vehTel.ignition);
+            const engaged =
+              device.state.immobilize === 'ENGAGED' || device.state.immobilize === 'PENDING';
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="inline-flex items-center gap-1 text-foreground-secondary">
+                    <Shield className="h-3.5 w-3.5 text-accent" />
+                    <span>Starter Interlock</span>
+                  </span>
+                  <Badge variant={engaged ? 'danger' : 'success'}>
+                    {device.state.immobilize ?? 'RELEASED'}
+                  </Badge>
+                </div>
+
+                {immobilizerConfirm ? (
+                  <div className="rounded-md border border-danger/40 bg-danger-soft p-2.5 space-y-2 text-[11px]">
+                    <div className="text-foreground font-medium">
+                      {safety.targetState === 'ENGAGED'
+                        ? 'Vehicle parked. Confirm starter cut?'
+                        : `Vehicle active (${safety.reason}). Command will queue as PENDING until parked.`}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          onSendCommand(device.device_id, { immobilize: true });
+                          setImmobilizerConfirm(false);
+                        }}
+                      >
+                        Confirm Cut
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setImmobilizerConfirm(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={engaged ? 'secondary' : 'danger'}
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => {
+                        if (engaged) {
+                          onSendCommand(device.device_id, { immobilize: false });
+                        } else {
+                          setImmobilizerConfirm(true);
+                        }
+                      }}
+                    >
+                      {engaged ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                      <span>{engaged ? 'Release Starter' : 'Starter Cut'}</span>
+                    </Button>
+                    {onTriggerCrash && (
+                      <Button variant="outline" size="sm" onClick={onTriggerCrash}>
+                        <AlertTriangle className="h-3.5 w-3.5 text-danger" />
+                        <span>SOS</span>
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Footer Status */}
+      <div className="flex items-center justify-between pt-1 border-t border-border/60 text-[10px] font-mono text-foreground-muted tabular-nums">
+        <span className="inline-flex items-center gap-1">
+          <Gauge className="h-3 w-3" />
+          <span>{device.info.operation_mode}</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Activity className="h-3 w-3" />
+          <span>FW {device.info.fw_version}</span>
+        </span>
+      </div>
+    </article>
   );
 };

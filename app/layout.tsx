@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from 'next';
-import './globals.css'; // Global styles
+import './globals.css';
+import { WorkspaceProvider } from '@/components/workspace/WorkspaceProvider';
+import { AppShell } from '@/components/workspace/AppShell';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 
 export const viewport: Viewport = {
-  themeColor: '#0f172a',
+  themeColor: '#090b0f',
   width: 'device-width',
   initialScale: 1,
 };
@@ -32,8 +35,20 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body suppressHydrationWarning>{children}</body>
+    <html
+      lang="en"
+      data-theme="obsidian"
+      data-accent="cyan"
+      data-density="comfortable"
+      suppressHydrationWarning
+    >
+      <body suppressHydrationWarning>
+        <WorkspaceProvider>
+          <ToastProvider>
+            <AppShell>{children}</AppShell>
+          </ToastProvider>
+        </WorkspaceProvider>
+      </body>
     </html>
   );
 }

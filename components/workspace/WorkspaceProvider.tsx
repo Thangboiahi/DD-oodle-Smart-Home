@@ -1,0 +1,454 @@
+'use client';
+
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { simulatorEngine } from '@/lib/simulator/engine';
+import { SimulatorSnapshot } from '@/lib/simulator/types';
+
+export type BaseTheme = 'obsidian' | 'alabaster' | 'system';
+export type AccentPreset = 'cyan' | 'emerald' | 'amber' | 'steel';
+export type UiDensity = 'comfortable' | 'compact';
+export type WidgetSize = 'compact' | 'standard' | 'wide' | 'tall';
+export type DockPosition = 'left' | 'right' | 'bottom' | 'float';
+
+export interface DockPanelState {
+  open: boolean;
+  position: DockPosition;
+  collapsed: boolean;
+  fullscreen: boolean;
+  width: number;
+  height: number;
+  floatX: number;
+  floatY: number;
+}
+
+export interface HomeSummary {
+  id: string;
+  name: string;
+  location: string;
+  hubStatus: 'online' | 'local';
+}
+
+export interface WorkspacePreferences {
+  theme: BaseTheme;
+  accent: AccentPreset;
+  density: UiDensity;
+  sidebarCollapsed: boolean;
+  activeHomeId: string;
+  tariffInr: number;
+  eco2DDefault: boolean;
+  scrollbarAlwaysVisible: boolean;
+  hubEnabled: boolean;
+  hubIp: string;
+  userRole: 'OWNER' | 'MEMBER';
+  collapsedSections: Record<string, boolean>;
+  widgetSizes: Record<string, WidgetSize>;
+  orderMaps: Record<string, string[]>;
+  dockPanels: Record<string, DockPanelState>;
+  splitSizes: Record<string, number>;
+}
+
+const STORAGE_KEY = 'dd_oodle_workspace_v1';
+
+const CRITICAL_ALERT_CODES = new Set<string>([
+  'CRASH_DETECTED',
+  'GAS_LEAK',
+  'SMOKE_FIRE',
+  'FALL_DETECTED',
+  'PANIC_SOS',
+  'SOS_MANUAL',
+]);
+
+export const DEFAULT_HOMES: HomeSummary[] = [
+  {
+    id: 'home_imphal_001',
+    name: 'Imphal Residence',
+    location: 'Manipur · IST',
+    hubStatus: 'online',
+  },
+  {
+    id: 'home_guwahati_002',
+    name: 'Guwahati Studio',
+    location: 'Assam · Standby',
+    hubStatus: 'local',
+  },
+];
+
+export const DEFAULT_PREFERENCES: WorkspacePreferences = {
+  theme: 'obsidian',
+  accent: 'cyan',
+  density: 'comfortable',
+  sidebarCollapsed: false,
+  activeHomeId: 'home_imphal_001',
+  tariffInr: 7.5,
+  eco2DDefault: false,
+  scrollbarAlwaysVisible: false,
+  hubEnabled: true,
+  hubIp: '192.168.1.50',
+  userRole: 'OWNER',
+  collapsedSections: {},
+  widgetSizes: {},
+  orderMaps: {},
+  dockPanels: {},
+  splitSizes: {},
+};
+
+interface WorkspaceContextValue {
+  prefs: WorkspacePreferences;
+  snapshot: SimulatorSnapshot;
+  homes: HomeSummary[];
+  activeHome: HomeSummary;
+  isLifeSafetyActive: boolean;
+  lifeSafetyReason: string | null;
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+  setTheme: (theme: BaseTheme) => void;
+  setAccent: (accent: AccentPreset) => void;
+  setDensity: (density: UiDensity) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  setActiveHomeId: (homeId: string) => void;
+  updateWorkspacePrefs: (patch: Partial<WorkspacePreferences>) => void;
+  toggleSectionCollapsed: (sectionId: string, defaultCollapsed?: boolean) => void;
+  isSectionCollapsed: (sectionId: string, defaultCollapsed?: boolean) => boolean;
+  setWidgetSize: (widgetId: string, size: WidgetSize) => void;
+  getWidgetSize: (widgetId: string, fallback?: WidgetSize) => WidgetSize;
+  setOrderList: (listId: string, order: string[]) => void;
+  getOrderList: (listId: string) => string[] | undefined;
+  setDockPanelState: (panelId: string, patch: Partial<DockPanelState>) => void;
+  getDockPanelState: (panelId: string, defaults?: Partial<DockPanelState>) => DockPanelState;
+  setSplitSize: (splitId: string, size: number) => void;
+  getSplitSize: (splitId: string, fallback: number) => number;
+  resetWorkspacePreferences: () => void;
+}
+
+const DEFAULT_DOCK_STATE: DockPanelState = {
+  open: false,
+  position: 'right',
+  collapsed: false,
+  fullscreen: false,
+  width: 380,
+  height: 300,
+  floatX: 80,
+  floatY: 88,
+};
+
+const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+
+function loadStoredPreferences(): WorkspacePreferences {
+  if (typeof window === 'undefined') return DEFAULT_PREFERENCES;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_PREFERENCES;
+    const parsed = JSON.parse(raw) as Partial<WorkspacePreferences>;
+    return {
+      ...DEFAULT_PREFERENCES,
+      ...parsed,
+      collapsedSections: { ...DEFAULT_PREFERENCES.collapsedSections, ...(parsed.collapsedSections ?? {}) },
+      widgetSizes: { ...DEFAULT_PREFERENCES.widgetSizes, ...(parsed.widgetSizes ?? {}) },
+      orderMaps: { ...DEFAULT_PREFERENCES.orderMaps, ...(parsed.orderMaps ?? {}) },
+      dockPanels: { ...DEFAULT_PREFERENCES.dockPanels, ...(parsed.dockPanels ?? {}) },
+      splitSizes: { ...DEFAULT_PREFERENCES.splitSizes, ...(parsed.splitSizes ?? {}) },
+    };
+  } catch {
+    return DEFAULT_PREFERENCES;
+  }
+}
+
+function computeLifeSafetyStatus(snapshot: SimulatorSnapshot): {
+  isLifeSafetyActive: boolean;
+  lifeSafetyReason: string | null;
+} {
+  if (
+    snapshot.activeCrashSos &&
+    (snapshot.activeCrashSos.status === 'countdown' || snapshot.activeCrashSos.status === 'escalated')
+  ) {
+    return {
+      isLifeSafetyActive: true,
+      lifeSafetyReason: `CRASH_DETECTED · ${snapshot.activeCrashSos.device_id}`,
+    };
+  }
+
+  for (const dev of Object.values(snapshot.devices)) {
+    const alertType = dev.last_alert?.type;
+    const severity = dev.last_alert?.severity;
+    if (alertType && (CRITICAL_ALERT_CODES.has(alertType) || severity === 'CRITICAL')) {
+      if (dev.state.fault || CRITICAL_ALERT_CODES.has(alertType)) {
+        return {
+          isLifeSafetyActive: true,
+          lifeSafetyReason: `${alertType} · ${dev.name}`,
+        };
+      }
+    }
+  }
+
+  return { isLifeSafetyActive: false, lifeSafetyReason: null };
+}
+
+export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const [prefs, setPrefs] = useState<WorkspacePreferences>(DEFAULT_PREFERENCES);
+  const [hydrated, setHydrated] = useState(false);
+  const [snapshot, setSnapshot] = useState<SimulatorSnapshot>(() => simulatorEngine.getSnapshot());
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Hydrate persisted preferences asynchronously on mount
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPrefs(loadStoredPreferences());
+      setHydrated(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Subscribe to simulator engine globally across all routes
+  useEffect(() => {
+    simulatorEngine.start(1000);
+    const unsubscribe = simulatorEngine.subscribe((nextSnap) => {
+      setSnapshot(nextSnap);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Persist non-sensitive UI preferences to localStorage (and dispatch settings sync event)
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+      window.dispatchEvent(new CustomEvent('ddoodle:prefs-sync', { detail: prefs }));
+    } catch {
+      // Ignore quota errors in restricted browsing modes
+    }
+  }, [prefs, hydrated]);
+
+  // Detect active life-safety critical conditions across all devices & crash SOS
+  const { isLifeSafetyActive, lifeSafetyReason } = computeLifeSafetyStatus(snapshot);
+
+  // Apply theme, accent, density, and life-safety override attributes to <html>
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    root.dataset.theme = prefs.theme;
+    root.dataset.accent = prefs.accent;
+    root.dataset.density = prefs.density;
+
+    if (isLifeSafetyActive) {
+      root.dataset.lifeSafety = 'critical';
+      root.classList.add('life-safety-override');
+    } else {
+      delete root.dataset.lifeSafety;
+      root.classList.remove('life-safety-override');
+    }
+  }, [prefs.theme, prefs.accent, prefs.density, isLifeSafetyActive]);
+
+  // Global Cmd/Ctrl+K shortcut for Command Palette
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const setTheme = useCallback((theme: BaseTheme) => {
+    setPrefs((prev) => ({ ...prev, theme }));
+  }, []);
+
+  const setAccent = useCallback((accent: AccentPreset) => {
+    setPrefs((prev) => ({ ...prev, accent }));
+  }, []);
+
+  const setDensity = useCallback((density: UiDensity) => {
+    setPrefs((prev) => ({ ...prev, density }));
+  }, []);
+
+  const setSidebarCollapsed = useCallback((sidebarCollapsed: boolean) => {
+    setPrefs((prev) => ({ ...prev, sidebarCollapsed }));
+  }, []);
+
+  const setActiveHomeId = useCallback((activeHomeId: string) => {
+    setPrefs((prev) => ({ ...prev, activeHomeId }));
+  }, []);
+
+  const updateWorkspacePrefs = useCallback((patch: Partial<WorkspacePreferences>) => {
+    setPrefs((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const toggleSectionCollapsed = useCallback((sectionId: string, defaultCollapsed = false) => {
+    setPrefs((prev) => {
+      const current = prev.collapsedSections[sectionId] ?? defaultCollapsed;
+      return {
+        ...prev,
+        collapsedSections: {
+          ...prev.collapsedSections,
+          [sectionId]: !current,
+        },
+      };
+    });
+  }, []);
+
+  const isSectionCollapsed = useCallback(
+    (sectionId: string, defaultCollapsed = false) => {
+      return prefs.collapsedSections[sectionId] ?? defaultCollapsed;
+    },
+    [prefs.collapsedSections]
+  );
+
+  const setWidgetSize = useCallback((widgetId: string, size: WidgetSize) => {
+    setPrefs((prev) => ({
+      ...prev,
+      widgetSizes: {
+        ...prev.widgetSizes,
+        [widgetId]: size,
+      },
+    }));
+  }, []);
+
+  const getWidgetSize = useCallback(
+    (widgetId: string, fallback: WidgetSize = 'standard'): WidgetSize => {
+      return prefs.widgetSizes[widgetId] ?? fallback;
+    },
+    [prefs.widgetSizes]
+  );
+
+  const setOrderList = useCallback((listId: string, order: string[]) => {
+    setPrefs((prev) => ({
+      ...prev,
+      orderMaps: {
+        ...prev.orderMaps,
+        [listId]: order,
+      },
+    }));
+  }, []);
+
+  const getOrderList = useCallback(
+    (listId: string) => {
+      return prefs.orderMaps[listId];
+    },
+    [prefs.orderMaps]
+  );
+
+  const setDockPanelState = useCallback((panelId: string, patch: Partial<DockPanelState>) => {
+    setPrefs((prev) => {
+      const existing = prev.dockPanels[panelId] ?? DEFAULT_DOCK_STATE;
+      return {
+        ...prev,
+        dockPanels: {
+          ...prev.dockPanels,
+          [panelId]: { ...existing, ...patch },
+        },
+      };
+    });
+  }, []);
+
+  const getDockPanelState = useCallback(
+    (panelId: string, defaults?: Partial<DockPanelState>): DockPanelState => {
+      return {
+        ...DEFAULT_DOCK_STATE,
+        ...(defaults ?? {}),
+        ...(prefs.dockPanels[panelId] ?? {}),
+      };
+    },
+    [prefs.dockPanels]
+  );
+
+  const setSplitSize = useCallback((splitId: string, size: number) => {
+    setPrefs((prev) => ({
+      ...prev,
+      splitSizes: {
+        ...prev.splitSizes,
+        [splitId]: size,
+      },
+    }));
+  }, []);
+
+  const getSplitSize = useCallback(
+    (splitId: string, fallback: number) => {
+      return prefs.splitSizes[splitId] ?? fallback;
+    },
+    [prefs.splitSizes]
+  );
+
+  const resetWorkspacePreferences = useCallback(() => {
+    setPrefs(DEFAULT_PREFERENCES);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // noop
+      }
+    }
+  }, []);
+
+  const activeHome = useMemo(
+    () => DEFAULT_HOMES.find((h) => h.id === prefs.activeHomeId) ?? DEFAULT_HOMES[0],
+    [prefs.activeHomeId]
+  );
+
+  const value = useMemo<WorkspaceContextValue>(
+    () => ({
+      prefs,
+      snapshot,
+      homes: DEFAULT_HOMES,
+      activeHome,
+      isLifeSafetyActive,
+      lifeSafetyReason,
+      commandPaletteOpen,
+      setCommandPaletteOpen,
+      setTheme,
+      setAccent,
+      setDensity,
+      setSidebarCollapsed,
+      setActiveHomeId,
+      updateWorkspacePrefs,
+      toggleSectionCollapsed,
+      isSectionCollapsed,
+      setWidgetSize,
+      getWidgetSize,
+      setOrderList,
+      getOrderList,
+      setDockPanelState,
+      getDockPanelState,
+      setSplitSize,
+      getSplitSize,
+      resetWorkspacePreferences,
+    }),
+    [
+      prefs,
+      snapshot,
+      activeHome,
+      isLifeSafetyActive,
+      lifeSafetyReason,
+      commandPaletteOpen,
+      setTheme,
+      setAccent,
+      setDensity,
+      setSidebarCollapsed,
+      setActiveHomeId,
+      updateWorkspacePrefs,
+      toggleSectionCollapsed,
+      isSectionCollapsed,
+      setWidgetSize,
+      getWidgetSize,
+      setOrderList,
+      getOrderList,
+      setDockPanelState,
+      getDockPanelState,
+      setSplitSize,
+      getSplitSize,
+      resetWorkspacePreferences,
+    ]
+  );
+
+  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+}
+
+export function useWorkspace() {
+  const ctx = useContext(WorkspaceContext);
+  if (!ctx) {
+    throw new Error('useWorkspace must be used within a WorkspaceProvider');
+  }
+  return ctx;
+}
