@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWorkspace } from './WorkspaceProvider';
@@ -73,16 +74,20 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         {actions && <div className="flex items-center gap-1.5 shrink-0">{actions}</div>}
       </div>
 
-      <div
-        className={cn(
-          'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
-          collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <div className={cn('p-[var(--dd-card-pad)]', contentClassName)}>{children}</div>
+          </motion.div>
         )}
-      >
-        <div className="overflow-hidden">
-          <div className={cn('p-[var(--dd-card-pad)]', contentClassName)}>{children}</div>
-        </div>
-      </div>
+      </AnimatePresence>
     </section>
   );
 };

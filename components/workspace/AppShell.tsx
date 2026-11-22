@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11,6 +12,7 @@ import {
   ChevronRight,
   CreditCard,
   Home,
+  Keyboard,
   KeyRound,
   Menu,
   Moon,
@@ -31,6 +33,12 @@ import { StatusPill } from '@/components/connectivity/StatusPill';
 import { OfflineBanner } from '@/components/connectivity/OfflineBanner';
 import { CrashSosModal, CriticalLifeSafetyAlert } from '@/components/safety/CrashSosModal';
 import { CommandPalette, Dropdown } from '@/components/ui';
+import { KeyboardShortcutsModal } from '@/components/ui/KeyboardShortcutsModal';
+import { DDoodleLogo } from '@/components/brand/DDoodleLogo';
+import { AppBootSplash } from '@/components/brand/AppBootSplash';
+import { QuickThemePopover } from '@/components/theme/CustomTriColorStudio';
+import { PwaLifecycleManager } from '@/components/pwa/PwaLifecycleManager';
+import { AlertInboxDrawer, AlertInboxEntry } from './AlertInboxDrawer';
 import { simulatorEngine } from '@/lib/simulator/engine';
 
 interface NavEntry {
@@ -149,6 +157,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const {
     prefs,
     snapshot,
+    lastSyncTs,
     homes,
     activeHome,
     isLifeSafetyActive,
@@ -157,50 +166,90 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     setSidebarCollapsed,
     setTheme,
     setCommandPaletteOpen,
+    setEditLayoutMode,
   } = useWorkspace();
 
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [readAlertIds, setReadAlertIds] = useState<string[]>([]);
 
-  const breadcrumbs = useMemo(() => buildBreadcrumbs(pathname), [pathname]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+      if (isTyping || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === '?') {
+        e.preventDefault();
+        setShortcutsOpen((s) => !s);
+      } else if (e.key.toLowerCase() === 'e' && pathname === '/') {
+        e.preventDefault();
+        setEditLayoutMode((m) => !m);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pathname, setEditLayoutMode]);
+
+  const breadcrumbs = buildBreadcrumbs(pathname);
   const isNestedRoute = breadcrumbs.length > 2;
 
-  const activeAlerts = useMemo(() => {
-    const list: Array<{ id: string; deviceName: string; type: string; severity: string; detail: string }> = [];
-    if (snapshot.activeCrashSos && snapshot.activeCrashSos.status !== 'cancelled_by_user') {
-      list.push({
-        id: snapshot.activeCrashSos.incident_id,
-        deviceName: snapshot.activeCrashSos.device_id,
-        type: 'CRASH_DETECTED',
-        severity: 'CRITICAL',
-        detail:
-          snapshot.activeCrashSos.status === 'countdown'
-            ? `SOS Countdown: ${snapshot.activeCrashSos.remaining_sec}s remaining`
-            : 'Emergency escalation dispatched',
+  const activeAlerts: AlertInboxEntry[] = [];
+  if (snapshot.activeCrashSos && snapshot.activeCrashSos.status !== 'cancelled_by_user') {
+    const sosDev = snapshot.devices[snapshot.activeCrashSos.device_id];
+    activeAlerts.push({
+      id: snapshot.activeCrashSos.incident_id,
+      deviceId: snapshot.activeCrashSos.device_id,
+      deviceName: sosDev?.name ?? snapshot.activeCrashSos.device_id,
+      moduleCode: sosDev?.module_code ?? 'VEH-01',
+      type: 'CRASH_DETECTED',
+      severity: 'CRITICAL',
+      detail:
+        snapshot.activeCrashSos.status === 'countdown'
+          ? `SOS Countdown: ${snapshot.activeCrashSos.remaining_sec}s remaining`
+          : 'Emergency escalation dispatched',
+      ts: snapshot.activeCrashSos.started_at_ms,
+    });
+  }
+  for (const dev of Object.values(snapshot.devices)) {
+    if (dev.state.fault) {
+      activeAlerts.push({
+        id: `${dev.device_id}-fault`,
+        deviceId: dev.device_id,
+        deviceName: dev.name,
+        moduleCode: dev.module_code,
+        type: dev.state.fault,
+        severity: 'HIGH',
+        detail: `Latched hardware fault on ${dev.module_code}. Requires 3s physical device hold.`,
+        ts: dev.state.ts,
       });
     }
-    for (const dev of Object.values(snapshot.devices)) {
-      if (dev.state.fault) {
-        list.push({
-          id: `${dev.device_id}-fault`,
-          deviceName: dev.name,
-          type: dev.state.fault,
-          severity: 'HIGH',
-          detail: `Latched hardware fault on ${dev.module_code}`,
-        });
-      }
-      if (dev.last_alert) {
-        list.push({
-          id: `${dev.device_id}-${dev.last_alert.ts}`,
-          deviceName: dev.name,
-          type: dev.last_alert.type,
-          severity: dev.last_alert.severity,
-          detail: dev.last_alert.message ?? `Alert on ${dev.module_code}`,
-        });
-      }
+    if (dev.last_alert) {
+      const sev: AlertInboxEntry['severity'] =
+        dev.last_alert.severity === 'CRITICAL'
+          ? 'CRITICAL'
+          : dev.last_alert.severity === 'WARNING'
+          ? 'WARNING'
+          : 'INFO';
+      activeAlerts.push({
+        id: `${dev.device_id}-${dev.last_alert.ts}`,
+        deviceId: dev.device_id,
+        deviceName: dev.name,
+        moduleCode: dev.module_code,
+        type: dev.last_alert.type,
+        severity: sev,
+        detail: dev.last_alert.message ?? `Alert on ${dev.module_code}`,
+        ts: dev.last_alert.ts,
+      });
     }
-    return list;
-  }, [snapshot]);
+  }
+  const unreadAlertsCount = activeAlerts.filter((a) => !readAlertIds.includes(a.id)).length;
 
   let activeCriticalAlert: CriticalLifeSafetyAlert | null = null;
   for (const dev of Object.values(snapshot.devices)) {
@@ -223,10 +272,37 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     setTheme(next);
   };
 
+  const isEcoMotion = prefs.motionMode === 'eco';
+
   return (
-    <div className="min-h-screen bg-canvas text-foreground flex flex-col">
-      {/* Global Command Palette */}
-      <CommandPalette />
+    <MotionConfig reducedMotion={prefs.motionMode === 'fluid' ? 'user' : 'always'}>
+      <div className="min-h-screen bg-canvas text-foreground flex flex-col">
+        {/* Cold PWA Boot Splash (0ms bypass when Life-Safety Critical is active) */}
+        <AppBootSplash />
+
+        {/* Global Command Palette */}
+        <CommandPalette />
+
+        {/* Desktop Keyboard Shortcuts Guide (?) */}
+        <KeyboardShortcutsModal
+          open={shortcutsOpen}
+          onClose={() => setShortcutsOpen(false)}
+        />
+
+        {/* Global Alert Center Slide-Over Drawer */}
+        <AlertInboxDrawer
+          open={alertsOpen}
+          onClose={() => setAlertsOpen(false)}
+          alerts={activeAlerts}
+          readIds={readAlertIds}
+          onMarkRead={(id) =>
+            setReadAlertIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+          }
+          onMarkAllRead={() => setReadAlertIds(activeAlerts.map((a) => a.id))}
+        />
+
+        {/* PWA Service Worker Update & Install Prompt */}
+        <PwaLifecycleManager />
 
       {/* Global Crash SOS & Critical Life-Safety Modal */}
       <CrashSosModal
@@ -250,24 +326,11 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           {/* Brand Header */}
           <div className="h-14 flex items-center justify-between gap-2 px-3 border-b border-border shrink-0">
             <Link href="/" className="flex items-center gap-2.5 min-w-0">
-              <div className="h-8 w-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center font-mono font-bold text-xs shrink-0">
-                DD
-              </div>
-              {!prefs.sidebarCollapsed && (
-                <div className="hidden lg:block min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-semibold tracking-tight text-foreground truncate">
-                      DD oodle
-                    </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-accent-soft text-accent border border-accent-border">
-                      v1.4
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-foreground-muted truncate">
-                    Smart Home OS
-                  </div>
-                </div>
-              )}
+              <DDoodleLogo
+                size="sm"
+                showWordmark={!prefs.sidebarCollapsed}
+                animated={!isEcoMotion}
+              />
             </Link>
 
             <button
@@ -397,10 +460,8 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               )}
 
               {/* Mobile Brand Mark */}
-              <Link href="/" className="md:hidden flex items-center gap-2 shrink-0">
-                <div className="h-7 w-7 rounded-md bg-accent text-accent-foreground flex items-center justify-center font-mono font-bold text-[11px]">
-                  DD
-                </div>
+              <Link href="/" className="md:hidden flex items-center shrink-0">
+                <DDoodleLogo size="sm" animated={!isEcoMotion} />
               </Link>
 
               {/* Home Switcher Dropdown */}
@@ -459,76 +520,47 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 </kbd>
               </button>
 
+              {/* Desktop Keyboard Shortcuts Button (?) */}
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(true)}
+                aria-label="Keyboard shortcuts"
+                title="Keyboard Shortcuts (?)"
+                className="hidden lg:inline-flex items-center justify-center h-8 w-8 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated hover:border-border-strong text-foreground-secondary hover:text-foreground transition-colors cursor-pointer"
+              >
+                <Keyboard className="h-3.5 w-3.5" />
+              </button>
+
+              {/* Quick Tri-Color Theme Popover */}
+              <QuickThemePopover />
+
               {/* 4-Tier Connectivity Status Pill */}
               <StatusPill
                 transport={snapshot.activeTransport}
                 homeId={snapshot.home_id}
+                lastSyncTs={lastSyncTs}
                 onModeSelect={(mode) => simulatorEngine.setTransportModeOverride(mode)}
               />
 
-              {/* Alert Bell */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setAlertsOpen((o) => !o)}
-                  aria-label="Notifications and alerts"
-                  className={cn(
-                    'relative inline-flex h-8 w-8 items-center justify-center rounded-[var(--dd-radius-control)] border transition-colors cursor-pointer',
-                    isLifeSafetyActive
-                      ? 'border-danger bg-danger-soft text-danger'
-                      : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground hover:border-border-strong'
-                  )}
-                >
-                  <Bell className="h-4 w-4" />
-                  {activeAlerts.length > 0 && (
-                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white font-mono text-[9px] font-bold flex items-center justify-center tabular-nums">
-                      {activeAlerts.length}
-                    </span>
-                  )}
-                </button>
-
-                {alertsOpen && (
-                  <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-[var(--dd-radius-card)] border border-border-strong bg-surface shadow-2xl z-50 overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-border bg-surface-elevated px-3.5 py-2.5">
-                      <span className="text-xs font-semibold text-foreground">
-                        Alerts & Safety Feed ({activeAlerts.length})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setAlertsOpen(false)}
-                        className="text-foreground-muted hover:text-foreground cursor-pointer"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <div className="max-h-72 overflow-y-auto p-2 space-y-1.5 dd-scroll">
-                      {activeAlerts.length === 0 ? (
-                        <div className="py-6 text-center text-xs text-foreground-muted">
-                          All systems nominal. No active faults.
-                        </div>
-                      ) : (
-                        activeAlerts.map((al) => (
-                          <div
-                            key={al.id}
-                            className="rounded-lg border border-border bg-surface-elevated p-2.5 text-xs space-y-0.5"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-mono font-semibold text-danger text-[11px]">
-                                {al.type}
-                              </span>
-                              <span className="text-[10px] font-mono text-foreground-muted">
-                                {al.severity}
-                              </span>
-                            </div>
-                            <div className="text-foreground font-medium">{al.deviceName}</div>
-                            <div className="text-[11px] text-foreground-secondary">{al.detail}</div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+              {/* Alert Bell -> Slide-Over Alert Inbox Drawer */}
+              <button
+                type="button"
+                onClick={() => setAlertsOpen(true)}
+                aria-label="Open Alert Center"
+                className={cn(
+                  'relative inline-flex h-8 w-8 items-center justify-center rounded-[var(--dd-radius-control)] border transition-colors cursor-pointer',
+                  isLifeSafetyActive
+                    ? 'border-danger bg-danger-soft text-danger'
+                    : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground hover:border-border-strong'
                 )}
-              </div>
+              >
+                <Bell className="h-4 w-4" />
+                {unreadAlertsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white font-mono text-[9px] font-bold flex items-center justify-center tabular-nums">
+                    {unreadAlertsCount}
+                  </span>
+                )}
+              </button>
             </div>
           </header>
 
@@ -562,10 +594,16 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             onSelectMode={(mode) => simulatorEngine.setTransportModeOverride(mode)}
           />
 
-          {/* Page Content */}
-          <main className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-4 pb-24 md:pb-6 [@media(max-height:500px)_and_(orientation:landscape)]:pb-4">
+          {/* Page Content with non-blocking GPU-composited entrance */}
+          <motion.main
+            key={pathname}
+            initial={isEcoMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={isEcoMotion ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' }}
+            className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-4 pb-24 md:pb-6 [@media(max-height:500px)_and_(orientation:landscape)]:pb-4"
+          >
             {children}
-          </main>
+          </motion.main>
         </div>
       </div>
 
@@ -583,12 +621,19 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                  'relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
                   active ? 'text-accent' : 'text-foreground-secondary'
                 )}
               >
-                <Icon className="h-4 w-4" />
-                <span>{item.shortLabel}</span>
+                {active && (
+                  <motion.span
+                    layoutId="mobile-bottom-nav-active"
+                    transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                    className="absolute inset-x-2 inset-y-1.5 rounded-lg bg-accent-soft border border-accent-border"
+                  />
+                )}
+                <Icon className="relative z-10 h-4 w-4" />
+                <span className="relative z-10">{item.shortLabel}</span>
               </Link>
             );
           })}
@@ -597,87 +642,107 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             type="button"
             onClick={() => setMoreDrawerOpen(true)}
             className={cn(
-              'flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors cursor-pointer',
+              'relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors cursor-pointer',
               moreDrawerOpen || secondaryNav.some((i) => i.match(pathname))
                 ? 'text-accent'
                 : 'text-foreground-secondary'
             )}
           >
-            <Menu className="h-4 w-4" />
-            <span>More</span>
+            {secondaryNav.some((i) => i.match(pathname)) && (
+              <motion.span
+                layoutId="mobile-bottom-nav-active"
+                transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                className="absolute inset-x-2 inset-y-1.5 rounded-lg bg-accent-soft border border-accent-border"
+              />
+            )}
+            <Menu className="relative z-10 h-4 w-4" />
+            <span className="relative z-10">More</span>
           </button>
         </div>
       </nav>
 
       {/* Mobile "More" Drawer */}
-      {moreDrawerOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end">
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-[2px]"
-            onClick={() => setMoreDrawerOpen(false)}
-          />
-          <div className="relative z-10 rounded-t-2xl border-t border-border-strong bg-surface p-4 pb-safe shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-accent" />
-                <span className="text-sm font-semibold">DD oodle Menu</span>
+      <AnimatePresence>
+        {moreDrawerOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-[2px]"
+              onClick={() => setMoreDrawerOpen(false)}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+              className="relative z-10 rounded-t-2xl border-t border-border-strong bg-surface p-4 pb-safe shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-accent" />
+                  <span className="text-sm font-semibold">DD oodle Menu</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMoreDrawerOpen(false)}
+                  aria-label="Close menu"
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border text-foreground-secondary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setMoreDrawerOpen(false)}
-                className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border text-foreground-secondary"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {secondaryNav.map((item) => {
-                const Icon = item.icon;
-                const active = item.match(pathname);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMoreDrawerOpen(false)}
-                    className={cn(
-                      'flex items-center gap-2.5 min-h-[44px] rounded-[var(--dd-radius-control)] border px-3 py-2 text-xs font-medium',
-                      active
-                        ? 'bg-accent-soft text-accent border-accent-border'
-                        : 'bg-surface-elevated text-foreground border-border'
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
+              <div className="grid grid-cols-2 gap-2">
+                {secondaryNav.map((item) => {
+                  const Icon = item.icon;
+                  const active = item.match(pathname);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMoreDrawerOpen(false)}
+                      className={cn(
+                        'flex items-center gap-2.5 min-h-[44px] rounded-[var(--dd-radius-control)] border px-3 py-2 text-xs font-medium',
+                        active
+                          ? 'bg-accent-soft text-accent border-accent-border'
+                          : 'bg-surface-elevated text-foreground border-border'
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
 
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
-              <button
-                type="button"
-                onClick={cycleTheme}
-                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated text-xs font-medium"
-              >
-                {prefs.theme === 'alabaster' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                <span>Theme: {prefs.theme}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreDrawerOpen(false);
-                  setCommandPaletteOpen(true);
-                }}
-                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-accent-border bg-accent-soft text-accent text-xs font-medium"
-              >
-                <Search className="h-4 w-4" />
-                <span>Quick Jump</span>
-              </button>
-            </div>
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={cycleTheme}
+                  className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated text-xs font-medium"
+                >
+                  {prefs.theme === 'alabaster' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  <span>Theme: {prefs.theme}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreDrawerOpen(false);
+                    setCommandPaletteOpen(true);
+                  }}
+                  className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-accent-border bg-accent-soft text-accent text-xs font-medium"
+                >
+                  <Search className="h-4 w-4" />
+                  <span>Quick Jump</span>
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </AnimatePresence>
+      </div>
+    </MotionConfig>
   );
 };

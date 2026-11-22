@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ChevronUp,
   GripHorizontal,
@@ -51,92 +52,7 @@ export const DockablePanel: React.FC<DockablePanelProps> = ({
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  if (!state.open) return null;
-
   const update = (patch: Partial<typeof state>) => setDockPanelState(panelId, patch);
-
-  // Mobile Bottom Sheet presentation
-  if (isMobile) {
-    return (
-      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col">
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
-          onClick={() => update({ open: false })}
-        />
-        <div
-          className={cn(
-            'relative z-10 flex flex-col rounded-t-2xl border-t border-border-strong bg-surface shadow-2xl transition-[height] duration-200',
-            sheetExpanded ? 'h-[88vh]' : 'h-[52vh]'
-          )}
-        >
-          {/* Sheet drag handle */}
-          <button
-            type="button"
-            onClick={() => setSheetExpanded((e) => !e)}
-            aria-label={sheetExpanded ? 'Shrink sheet' : 'Expand sheet'}
-            className="flex flex-col items-center justify-center pt-2 pb-1.5 cursor-pointer"
-          >
-            <span className="h-1 w-10 rounded-full bg-border-strong" />
-          </button>
-
-          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2 shrink-0">
-            <div className="flex items-center gap-2 min-w-0">
-              {icon && <span className="text-accent shrink-0">{icon}</span>}
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-foreground truncate">{title}</div>
-                {subtitle && (
-                  <div className="text-[10px] font-mono text-foreground-muted truncate">{subtitle}</div>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setSheetExpanded((e) => !e)}
-                className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border text-foreground-secondary"
-              >
-                {sheetExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => update({ open: false })}
-                className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border text-foreground-secondary"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-y-auto p-3.5 pb-safe dd-scroll">{children}</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Collapsed Edge Tab on Desktop/Tablet
-  if (state.collapsed && !state.fullscreen) {
-    const edgeClasses: Record<DockPosition, string> = {
-      left: 'left-0 top-1/2 -translate-y-1/2 rounded-r-lg border-l-0',
-      right: 'right-0 top-1/2 -translate-y-1/2 rounded-l-lg border-r-0',
-      bottom: 'bottom-0 left-1/2 -translate-x-1/2 rounded-t-lg border-b-0',
-      float: 'bottom-4 right-4 rounded-lg',
-    };
-
-    return (
-      <button
-        type="button"
-        onClick={() => update({ collapsed: false })}
-        className={cn(
-          'fixed z-40 flex items-center gap-2 border border-border-strong bg-surface-elevated hover:border-accent-border px-3 py-2 text-xs font-medium text-foreground shadow-xl cursor-pointer transition-colors',
-          edgeClasses[state.position]
-        )}
-      >
-        {icon && <span className="text-accent">{icon}</span>}
-        <span>{title}</span>
-        <ChevronUp className="h-3.5 w-3.5 text-foreground-muted" />
-      </button>
-    );
-  }
 
   // Floating drag handler
   const startFloatDrag = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -214,133 +130,240 @@ export const DockablePanel: React.FC<DockablePanelProps> = ({
     ? 'left-0 right-0 bottom-0 border-b-0 rounded-t-[var(--dd-radius-card)]'
     : 'rounded-[var(--dd-radius-card)]';
 
+  const edgeClasses: Record<DockPosition, string> = {
+    left: 'left-0 top-1/2 -translate-y-1/2 rounded-r-lg border-l-0',
+    right: 'right-0 top-1/2 -translate-y-1/2 rounded-l-lg border-r-0',
+    bottom: 'bottom-0 left-1/2 -translate-x-1/2 rounded-t-lg border-b-0',
+    float: 'bottom-4 right-4 rounded-lg',
+  };
+
+  const initialMotion =
+    state.position === 'left'
+      ? { opacity: 0, x: -24 }
+      : state.position === 'bottom'
+      ? { opacity: 0, y: 24 }
+      : state.position === 'float'
+      ? { opacity: 0, scale: 0.96 }
+      : { opacity: 0, x: 24 };
+
   return (
-    <aside
-      style={containerStyle}
-      className={cn(
-        'fixed z-40 flex flex-col border border-border-strong bg-surface shadow-2xl overflow-hidden',
-        positionClasses
-      )}
-    >
-      {/* Resize handles */}
-      {!state.fullscreen && state.position === 'right' && (
-        <div
-          onPointerDown={startResize('left')}
-          title="Drag to resize width"
-          className="absolute left-0 inset-y-0 w-1.5 cursor-col-resize hover:bg-accent/50 transition-colors z-20"
-        />
-      )}
-      {!state.fullscreen && state.position === 'left' && (
-        <div
-          onPointerDown={startResize('right')}
-          title="Drag to resize width"
-          className="absolute right-0 inset-y-0 w-1.5 cursor-col-resize hover:bg-accent/50 transition-colors z-20"
-        />
-      )}
-      {!state.fullscreen && state.position === 'bottom' && (
-        <div
-          onPointerDown={startResize('top')}
-          title="Drag to resize height"
-          className="absolute top-0 inset-x-0 h-1.5 cursor-row-resize hover:bg-accent/50 transition-colors z-20"
-        />
-      )}
-
-      {/* Header bar */}
-      <div
-        onPointerDown={startFloatDrag}
-        className={cn(
-          'flex items-center justify-between gap-2 border-b border-border bg-surface-elevated px-3 py-2 shrink-0 select-none',
-          state.position === 'float' && !state.fullscreen && 'cursor-move'
-        )}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          {state.position === 'float' && !state.fullscreen && (
-            <GripHorizontal className="h-3.5 w-3.5 text-foreground-muted shrink-0" />
-          )}
-          {icon && <span className="text-accent shrink-0">{icon}</span>}
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-foreground truncate">{title}</div>
-            {subtitle && (
-              <div className="text-[10px] font-mono text-foreground-muted truncate">{subtitle}</div>
+    <AnimatePresence>
+      {state.open && isMobile && (
+        <div key="mobile-sheet" className="fixed inset-x-0 bottom-0 z-40 flex flex-col">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
+            onClick={() => update({ open: false })}
+          />
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+            className={cn(
+              'relative z-10 flex flex-col rounded-t-2xl border-t border-border-strong bg-surface shadow-2xl transition-[height] duration-200',
+              sheetExpanded ? 'h-[88vh]' : 'h-[52vh]'
             )}
-          </div>
-        </div>
-
-        {/* Dock Controls */}
-        <div
-          className="flex items-center gap-0.5 shrink-0"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          {(
-            [
-              ['left', PanelLeft, 'Dock Left'],
-              ['bottom', PanelBottom, 'Dock Bottom'],
-              ['right', PanelRight, 'Dock Right'],
-              ['float', PictureInPicture2, 'Float Panel'],
-            ] as const
-          ).map(([pos, Icon, label]) => (
+          >
             <button
-              key={pos}
               type="button"
-              title={label}
-              aria-label={label}
-              onClick={() => update({ position: pos, fullscreen: false, collapsed: false })}
-              className={cn(
-                'h-6 w-6 inline-flex items-center justify-center rounded text-foreground-muted hover:text-foreground hover:bg-surface-muted transition-colors cursor-pointer',
-                state.position === pos && !state.fullscreen && 'bg-accent-soft text-accent'
-              )}
+              onClick={() => setSheetExpanded((e) => !e)}
+              aria-label={sheetExpanded ? 'Shrink sheet' : 'Expand sheet'}
+              className="flex flex-col items-center justify-center pt-2 pb-1.5 cursor-pointer"
             >
-              <Icon className="h-3.5 w-3.5" />
+              <span className="h-1 w-10 rounded-full bg-border-strong" />
             </button>
-          ))}
 
-          <span className="mx-1 h-3.5 w-px bg-border" />
+            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                {icon && <span className="text-accent shrink-0">{icon}</span>}
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-foreground truncate">{title}</div>
+                  {subtitle && (
+                    <div className="text-[10px] font-mono text-foreground-muted truncate">{subtitle}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSheetExpanded((e) => !e)}
+                  aria-label={sheetExpanded ? 'Restore height' : 'Expand height'}
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border text-foreground-secondary"
+                >
+                  {sheetExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update({ open: false })}
+                  aria-label="Close bottom sheet"
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-border text-foreground-secondary"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
 
-          <button
-            type="button"
-            title="Collapse to edge tab"
-            aria-label="Collapse panel"
-            onClick={() => update({ collapsed: true, fullscreen: false })}
-            className="h-6 px-1.5 inline-flex items-center justify-center rounded text-[10px] font-mono text-foreground-muted hover:text-foreground hover:bg-surface-muted cursor-pointer"
-          >
-            _
-          </button>
-
-          <button
-            type="button"
-            title={state.fullscreen ? 'Restore size' : 'Expand to fullscreen'}
-            aria-label={state.fullscreen ? 'Restore size' : 'Expand to fullscreen'}
-            onClick={() => update({ fullscreen: !state.fullscreen })}
-            className="h-6 w-6 inline-flex items-center justify-center rounded text-foreground-muted hover:text-foreground hover:bg-surface-muted cursor-pointer"
-          >
-            {state.fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
-
-          <button
-            type="button"
-            title="Close panel"
-            aria-label="Close panel"
-            onClick={() => update({ open: false, fullscreen: false })}
-            className="h-6 w-6 inline-flex items-center justify-center rounded text-foreground-muted hover:text-danger hover:bg-danger-soft cursor-pointer"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Scrollable Body */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3.5 dd-scroll">{children}</div>
-
-      {/* Floating bottom-right resize corner */}
-      {!state.fullscreen && state.position === 'float' && (
-        <div
-          onPointerDown={startResize('corner')}
-          title="Drag to resize"
-          className="absolute right-0 bottom-0 h-4 w-4 cursor-nwse-resize flex items-end justify-end p-0.5 text-foreground-muted/60 hover:text-accent"
-        >
-          <span className="h-2 w-2 border-r-2 border-b-2 border-current rounded-br-[2px]" />
+            <div className="flex-1 min-h-0 overflow-y-auto p-3.5 pb-safe dd-scroll">{children}</div>
+          </motion.div>
         </div>
       )}
-    </aside>
+
+      {state.open && !isMobile && state.collapsed && !state.fullscreen && (
+        <motion.button
+          key="collapsed-tab"
+          type="button"
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.94 }}
+          onClick={() => update({ collapsed: false })}
+          className={cn(
+            'fixed z-40 flex items-center gap-2 border border-border-strong bg-surface-elevated hover:border-accent-border px-3 py-2 text-xs font-medium text-foreground shadow-xl cursor-pointer transition-colors',
+            edgeClasses[state.position]
+          )}
+        >
+          {icon && <span className="text-accent">{icon}</span>}
+          <span>{title}</span>
+          <ChevronUp className="h-3.5 w-3.5 text-foreground-muted" />
+        </motion.button>
+      )}
+
+      {state.open && !isMobile && (!state.collapsed || state.fullscreen) && (
+        <motion.aside
+          key="docked-panel"
+          style={containerStyle}
+          initial={initialMotion}
+          animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+          exit={initialMotion}
+          transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+          className={cn(
+            'fixed z-40 flex flex-col border border-border-strong bg-surface shadow-2xl overflow-hidden',
+            positionClasses
+          )}
+        >
+          {/* Resize handles */}
+          {!state.fullscreen && state.position === 'right' && (
+            <div
+              onPointerDown={startResize('left')}
+              title="Drag to resize width"
+              className="absolute left-0 inset-y-0 w-1.5 cursor-col-resize hover:bg-accent/50 transition-colors z-20"
+            />
+          )}
+          {!state.fullscreen && state.position === 'left' && (
+            <div
+              onPointerDown={startResize('right')}
+              title="Drag to resize width"
+              className="absolute right-0 inset-y-0 w-1.5 cursor-col-resize hover:bg-accent/50 transition-colors z-20"
+            />
+          )}
+          {!state.fullscreen && state.position === 'bottom' && (
+            <div
+              onPointerDown={startResize('top')}
+              title="Drag to resize height"
+              className="absolute top-0 inset-x-0 h-1.5 cursor-row-resize hover:bg-accent/50 transition-colors z-20"
+            />
+          )}
+
+          {/* Header bar */}
+          <div
+            onPointerDown={startFloatDrag}
+            className={cn(
+              'flex items-center justify-between gap-2 border-b border-border bg-surface-elevated px-3 py-2 shrink-0 select-none',
+              state.position === 'float' && !state.fullscreen && 'cursor-move'
+            )}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              {state.position === 'float' && !state.fullscreen && (
+                <GripHorizontal className="h-3.5 w-3.5 text-foreground-muted shrink-0" />
+              )}
+              {icon && <span className="text-accent shrink-0">{icon}</span>}
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-foreground truncate">{title}</div>
+                {subtitle && (
+                  <div className="text-[10px] font-mono text-foreground-muted truncate">{subtitle}</div>
+                )}
+              </div>
+            </div>
+
+            {/* Dock Controls */}
+            <div
+              className="flex items-center gap-0.5 shrink-0"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {(
+                [
+                  ['left', PanelLeft, 'Dock Left'],
+                  ['bottom', PanelBottom, 'Dock Bottom'],
+                  ['right', PanelRight, 'Dock Right'],
+                  ['float', PictureInPicture2, 'Float Panel'],
+                ] as const
+              ).map(([pos, Icon, label]) => (
+                <button
+                  key={pos}
+                  type="button"
+                  title={label}
+                  aria-label={label}
+                  onClick={() => update({ position: pos, fullscreen: false, collapsed: false })}
+                  className={cn(
+                    'h-6 w-6 inline-flex items-center justify-center rounded text-foreground-muted hover:text-foreground hover:bg-surface-muted transition-colors cursor-pointer',
+                    state.position === pos && !state.fullscreen && 'bg-accent-soft text-accent'
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              ))}
+
+              <span className="mx-1 h-3.5 w-px bg-border" />
+
+              <button
+                type="button"
+                title="Collapse to edge tab"
+                aria-label="Collapse panel"
+                onClick={() => update({ collapsed: true, fullscreen: false })}
+                className="h-6 px-1.5 inline-flex items-center justify-center rounded text-[10px] font-mono text-foreground-muted hover:text-foreground hover:bg-surface-muted cursor-pointer"
+              >
+                _
+              </button>
+
+              <button
+                type="button"
+                title={state.fullscreen ? 'Restore size' : 'Expand to fullscreen'}
+                aria-label={state.fullscreen ? 'Restore size' : 'Expand to fullscreen'}
+                onClick={() => update({ fullscreen: !state.fullscreen })}
+                className="h-6 w-6 inline-flex items-center justify-center rounded text-foreground-muted hover:text-foreground hover:bg-surface-muted cursor-pointer"
+              >
+                {state.fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              </button>
+
+              <button
+                type="button"
+                title="Close panel"
+                aria-label="Close panel"
+                onClick={() => update({ open: false, fullscreen: false })}
+                className="h-6 w-6 inline-flex items-center justify-center rounded text-foreground-muted hover:text-danger hover:bg-danger-soft cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable Body */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-3.5 dd-scroll">{children}</div>
+
+          {/* Floating bottom-right resize corner */}
+          {!state.fullscreen && state.position === 'float' && (
+            <div
+              onPointerDown={startResize('corner')}
+              title="Drag to resize"
+              className="absolute right-0 bottom-0 h-4 w-4 cursor-nwse-resize flex items-end justify-end p-0.5 text-foreground-muted/60 hover:text-accent"
+            >
+              <span className="h-2 w-2 border-r-2 border-b-2 border-current rounded-br-[2px]" />
+            </div>
+          )}
+        </motion.aside>
+      )}
+    </AnimatePresence>
   );
 };

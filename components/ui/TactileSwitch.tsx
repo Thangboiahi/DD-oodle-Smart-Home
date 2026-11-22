@@ -1,8 +1,10 @@
 'use client';
 
 import React from 'react';
+import { motion } from 'motion/react';
 import { Check, Hand, Loader2, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { triggerHaptic } from './haptics';
 
 export interface TactileSwitchProps {
   checked: boolean;
@@ -20,8 +22,8 @@ export interface TactileSwitchProps {
 
 /**
  * Tactile Industrial Switch (>= 44px mobile touch target)
- * Supports optimistic state, pending spinner, hardware `ack` indicator,
- * and manual wall-switch override badge.
+ * Supports optimistic state, snappy micro-spring thumb, pending spinner,
+ * hardware `ack` indicator, and manual wall-switch override badge.
  */
 export const TactileSwitch: React.FC<TactileSwitchProps> = ({
   checked,
@@ -39,17 +41,22 @@ export const TactileSwitch: React.FC<TactileSwitchProps> = ({
   const isDisabled = disabled || locked;
 
   return (
-    <button
+    <motion.button
       id={id}
       type="button"
       role="switch"
       aria-checked={checked}
       disabled={isDisabled}
+      whileTap={isDisabled ? undefined : { scale: 0.99 }}
+      transition={{ type: 'spring', stiffness: 600, damping: 35 }}
       onClick={() => {
-        if (!isDisabled) onChange(!checked);
+        if (!isDisabled) {
+          triggerHaptic('tap');
+          onChange(!checked);
+        }
       }}
       className={cn(
-        'group w-full min-h-[44px] flex items-center justify-between gap-3 rounded-[var(--dd-radius-control)] border px-3 py-2 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 select-none cursor-pointer',
+        'group w-full min-h-[44px] flex items-center justify-between gap-3 rounded-[var(--dd-radius-control)] border px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 select-none cursor-pointer',
         checked
           ? 'bg-accent-soft/70 border-accent-border text-foreground'
           : 'bg-surface-elevated border-border hover:border-border-strong text-foreground',
@@ -70,7 +77,8 @@ export const TactileSwitch: React.FC<TactileSwitchProps> = ({
             </span>
           )}
           {locked && (
-            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-mono bg-danger-soft text-danger border border-danger/30">
+            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-mono bg-danger-soft text-danger border border-danger/30"
+            >
               <Lock className="h-2.5 w-2.5" />
               <span>LOCKED</span>
             </span>
@@ -90,7 +98,7 @@ export const TactileSwitch: React.FC<TactileSwitchProps> = ({
         ) : acked ? (
           <span
             title="Hardware ACK confirmed"
-            className="inline-flex items-center gap-0.5 text-[10px] font-mono text-success"
+            className="inline-flex items-center gap-0.5 text-[10px] font-mono text-tertiary"
           >
             <Check className="h-3 w-3" />
             <span className="hidden sm:inline">ACK</span>
@@ -101,22 +109,22 @@ export const TactileSwitch: React.FC<TactileSwitchProps> = ({
         <span
           aria-hidden="true"
           className={cn(
-            'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150',
+            'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-0.5 transition-colors duration-150',
             checked
-              ? 'bg-accent border-accent-border'
-              : 'bg-surface-muted border-border-strong'
+              ? 'bg-accent border-accent-border justify-end'
+              : 'bg-surface-muted border-border-strong justify-start'
           )}
         >
-          <span
+          <motion.span
+            layout
+            transition={{ type: 'spring', stiffness: 560, damping: 34 }}
             className={cn(
-              'inline-block h-4 w-4 rounded-full transition-transform duration-150',
-              checked
-                ? 'translate-x-5 bg-accent-foreground'
-                : 'translate-x-1 bg-foreground-secondary'
+              'inline-block h-4 w-4 rounded-full',
+              checked ? 'bg-accent-foreground' : 'bg-foreground-secondary'
             )}
           />
         </span>
       </div>
-    </button>
+    </motion.button>
   );
 };

@@ -6,3 +6,6 @@ export * from './ResizableSplit';
 export * from './WidgetSizeFrame';
 export * from './DraggableList';
 export * from './DockablePanel';
+export * from './StandaloneMonitors';
+export * from './UniversalLayoutStudio';
+export * from './AlertInboxDrawer';

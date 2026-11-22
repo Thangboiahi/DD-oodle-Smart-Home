@@ -7,17 +7,15 @@ import {
   Copy,
   Home,
   Mic,
-  Monitor,
-  Moon,
   Palette,
   Plus,
   RefreshCw,
   RotateCcw,
   Shield,
   Sliders,
-  Sun,
   Trash2,
   Users,
+  Zap,
 } from 'lucide-react';
 import {
   Badge,
@@ -32,29 +30,21 @@ import {
   useToast,
 } from '@/components/ui';
 import {
-  AccentPreset,
-  BaseTheme,
   UiDensity,
   useWorkspace,
 } from '@/components/workspace';
+import { CustomTriColorStudio } from '@/components/theme/CustomTriColorStudio';
+import { MotionPreference } from '@/components/theme/triColor';
 
 type SettingsTab = 'appearance' | 'home' | 'family' | 'alerts' | 'voice';
 
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
-const ACCENT_OPTIONS: Array<{ value: AccentPreset; label: string; swatch: string }> = [
-  { value: 'cyan', label: 'Cyan Pulse', swatch: '#06b6d4' },
-  { value: 'emerald', label: 'Emerald Signal', swatch: '#10b981' },
-  { value: 'amber', label: 'Amber Volt', swatch: '#f59e0b' },
-  { value: 'steel', label: 'Monochrome Steel', swatch: '#94a3b8' },
-];
-
 export default function SettingsPage() {
   const {
     prefs,
     activeHome,
-    setTheme,
-    setAccent,
+    setMotionMode,
     setDensity,
     updateWorkspacePrefs,
     resetWorkspacePreferences,
@@ -207,59 +197,48 @@ export default function SettingsPage() {
             <Badge variant="mono">PERSISTED</Badge>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-foreground-secondary">Base Theme</div>
-              <SegmentedControl<BaseTheme>
-                fullWidth
-                ariaLabel="Base Theme"
-                value={prefs.theme}
-                onChange={setTheme}
-                options={[
-                  { value: 'obsidian', label: 'Obsidian Slate', icon: <Moon className="h-3.5 w-3.5" /> },
-                  { value: 'alabaster', label: 'Alabaster Daylight', icon: <Sun className="h-3.5 w-3.5" /> },
-                  { value: 'system', label: 'System Auto', icon: <Monitor className="h-3.5 w-3.5" /> },
-                ]}
-              />
-            </div>
+            <CustomTriColorStudio />
 
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-foreground-secondary">Accent Signal</div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {ACCENT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setAccent(opt.value)}
-                    className={`min-h-[44px] flex items-center gap-2.5 rounded-[var(--dd-radius-control)] border px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${
-                      prefs.accent === opt.value
-                        ? 'border-accent-border bg-accent-soft text-foreground'
-                        : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground'
-                    }`}
-                  >
-                    <span
-                      className="h-3.5 w-3.5 rounded-full shrink-0 border border-white/20"
-                      style={{ backgroundColor: opt.swatch }}
-                    />
-                    <span className="truncate">{opt.label}</span>
-                  </button>
-                ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border">
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-foreground-secondary">UI Density</div>
+                <SegmentedControl<UiDensity>
+                  fullWidth
+                  ariaLabel="UI Density"
+                  value={prefs.density}
+                  onChange={setDensity}
+                  options={[
+                    { value: 'comfortable', label: 'Comfortable', icon: <Sliders className="h-3.5 w-3.5" /> },
+                    { value: 'compact', label: 'Compact', icon: <Sliders className="h-3.5 w-3.5" /> },
+                  ]}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-foreground-secondary">
+                  Fluid Motion Performance
+                </div>
+                <SegmentedControl<MotionPreference>
+                  fullWidth
+                  ariaLabel="Motion preference"
+                  value={prefs.motionMode}
+                  onChange={setMotionMode}
+                  options={[
+                    { value: 'fluid', label: 'Fluid', icon: <Zap className="h-3.5 w-3.5" /> },
+                    { value: 'reduced', label: 'Reduced' },
+                    { value: 'eco', label: 'Eco / Off' },
+                  ]}
+                />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-foreground-secondary">UI Density</div>
-              <SegmentedControl<UiDensity>
-                ariaLabel="UI Density"
-                value={prefs.density}
-                onChange={setDensity}
-                options={[
-                  { value: 'comfortable', label: 'Comfortable', icon: <Sliders className="h-3.5 w-3.5" /> },
-                  { value: 'compact', label: 'Compact', icon: <Sliders className="h-3.5 w-3.5" /> },
-                ]}
-              />
-            </div>
-
             <div className="space-y-2 pt-2 border-t border-border">
+              <TactileSwitch
+                label="Haptic Feedback (Android)"
+                sublabel="Subtle vibration feedback on switch toggles, fan steps, drag-drop & fault locks"
+                checked={prefs.hapticsEnabled}
+                onChange={(v) => updateWorkspacePrefs({ hapticsEnabled: v })}
+              />
               <TactileSwitch
                 label="Prefer Eco 2D Grid over 3D Twin"
                 sublabel="Saves GPU & battery on low-end Android phones"

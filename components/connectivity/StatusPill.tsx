@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Bluetooth,
   Check,
@@ -27,6 +27,7 @@ interface StatusPillProps {
   homeId: string;
   selectedDeviceId?: string;
   localPin?: string;
+  lastSyncTs?: number;
   onModeSelect?: (mode: OperationMode) => void;
 }
 
@@ -34,6 +35,7 @@ export const StatusPill: React.FC<StatusPillProps> = ({
   transport,
   selectedDeviceId = 'dd_pwr01_a1b2c3',
   localPin = '48291034',
+  lastSyncTs,
   onModeSelect,
 }) => {
   const [open, setOpen] = useState(false);
@@ -41,6 +43,17 @@ export const StatusPill: React.FC<StatusPillProps> = ({
   const [copiedPin, setCopiedPin] = useState(false);
   const [bleStatus, setBleStatus] = useState<string | null>(null);
   const [bleAuthStage, setBleAuthStage] = useState<'idle' | 'scanning' | 'nonce_hmac' | 'authenticated' | 'error'>('idle');
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [open]);
+
+  const syncedSecondsAgo = lastSyncTs
+    ? Math.max(0, Math.floor((nowMs - lastSyncTs) / 1000))
+    : 0;
 
   const getPillConfig = (tier: ActiveTransportTier) => {
     switch (tier) {
@@ -177,8 +190,8 @@ export const StatusPill: React.FC<StatusPillProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold">Connectivity Diagnostics &amp; Fail-Safe</h3>
-                  <p className="text-[11px] text-foreground-muted font-mono">
-                    Active Tier: <span className="text-foreground font-semibold">{pill.label}</span>
+                  <p className="text-[11px] text-foreground-muted font-mono tabular-nums">
+                    Active Tier: <span className="text-foreground font-semibold">{pill.label}</span> · Synced {syncedSecondsAgo}s ago
                   </p>
                 </div>
               </div>

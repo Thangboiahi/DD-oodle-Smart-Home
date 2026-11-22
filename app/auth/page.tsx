@@ -14,6 +14,7 @@ import {
   SegmentedControl,
   useToast,
 } from '@/components/ui';
+import { DDoodleLogo } from '@/components/brand/DDoodleLogo';
 
 const E164_INDIA_REGEX = /^\+91[6-9]\d{9}$/;
 
@@ -90,10 +91,8 @@ export default function AuthPage() {
 
   return (
     <div className="max-w-md mx-auto my-6 space-y-4">
-      <div className="text-center space-y-1.5">
-        <div className="mx-auto h-10 w-10 rounded-xl bg-accent text-accent-foreground flex items-center justify-center font-mono font-bold text-sm">
-          DD
-        </div>
+      <div className="text-center space-y-2 flex flex-col items-center">
+        <DDoodleLogo size="lg" animated={true} />
         <h1 className="text-lg font-semibold tracking-tight text-foreground">
           DD oodle Smart Home Sign In
         </h1>

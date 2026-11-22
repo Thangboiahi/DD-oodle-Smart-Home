@@ -1,14 +1,18 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Car,
   Cpu,
   CreditCard,
+  ExternalLink,
   Home,
   KeyRound,
+  LayoutGrid,
   Moon,
+  Palette,
+  Play,
   PlusCircle,
   Search,
   Settings,
@@ -17,18 +21,35 @@ import {
   Sun,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { LAN_TRANSPORT } from '@/lib/protocol/transports';
+import { simulatorEngine } from '@/lib/simulator/engine';
 import { useWorkspace } from '@/components/workspace/WorkspaceProvider';
+import { EmptyState } from './EmptyState';
 
 interface CommandItem {
   id: string;
-  group: 'Navigation' | 'Devices' | 'Workspace';
+  group: 'Navigation' | 'Rooms' | 'Devices' | 'Quick Actions' | 'Workspace';
   label: string;
   subtitle?: string;
   icon: React.ReactNode;
   shortcut?: string;
   onSelect: () => void;
+}
+
+function fuzzyMatch(text: string, query: string): boolean {
+  const hay = text.toLowerCase();
+  const needle = query.toLowerCase().trim();
+  if (!needle) return true;
+  if (hay.includes(needle)) return true;
+  // Subsequence fuzzy match
+  let ni = 0;
+  for (let hi = 0; hi < hay.length && ni < needle.length; hi++) {
+    if (hay[hi] === needle[ni]) ni++;
+  }
+  return ni === needle.length;
 }
 
 export const CommandPalette: React.FC = () => {
@@ -39,94 +60,153 @@ export const CommandPalette: React.FC = () => {
     snapshot,
     prefs,
     setTheme,
+    setPalettePreset,
     setDensity,
+    setEditLayoutMode,
   } = useWorkspace();
 
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
 
-  const items = useMemo<CommandItem[]>(() => {
-    const closeAnd = (fn: () => void) => () => {
-      setCommandPaletteOpen(false);
-      setQuery('');
-      fn();
-    };
+  const closeAnd = (fn: () => void) => () => {
+    setCommandPaletteOpen(false);
+    setQuery('');
+    fn();
+  };
 
-    const navItems: CommandItem[] = [
-      {
-        id: 'nav-home',
-        group: 'Navigation',
-        label: 'Home Dashboard',
-        subtitle: 'Rooms, 3D Twin & live telemetry',
-        icon: <Home className="h-4 w-4" />,
-        shortcut: 'G H',
-        onSelect: closeAnd(() => router.push('/')),
-      },
-      {
-        id: 'nav-vehicles',
-        group: 'Navigation',
-        label: 'Vehicles & Safety',
-        subtitle: 'Live GPS, Crash SOS & Immobilizer',
-        icon: <Car className="h-4 w-4" />,
-        shortcut: 'G V',
-        onSelect: closeAnd(() => router.push('/vehicles')),
-      },
-      {
-        id: 'nav-automations',
-        group: 'Navigation',
-        label: 'Automations',
-        subtitle: 'Hybrid Recipes & Pro Logic Rules',
-        icon: <Sparkles className="h-4 w-4" />,
-        shortcut: 'G A',
-        onSelect: closeAnd(() => router.push('/automations')),
-      },
-      {
-        id: 'nav-setup',
-        group: 'Navigation',
-        label: 'Device Provisioning Wizard',
-        subtitle: 'QR / SoftAP 192.168.4.1 / BLE Setup',
-        icon: <PlusCircle className="h-4 w-4" />,
-        onSelect: closeAnd(() => router.push('/setup')),
-      },
-      {
-        id: 'nav-billing',
-        group: 'Navigation',
-        label: 'Billing & Core Floor',
-        subtitle: '90-Day Trial, UPI Renewal & Anti-Bricking Floor',
-        icon: <CreditCard className="h-4 w-4" />,
-        onSelect: closeAnd(() => router.push('/billing')),
-      },
-      {
-        id: 'nav-settings',
-        group: 'Navigation',
-        label: 'Settings & Workspace',
-        subtitle: 'Theme, Density, Family Roles & Voice C2C',
-        icon: <Settings className="h-4 w-4" />,
-        onSelect: closeAnd(() => router.push('/settings')),
-      },
-      {
-        id: 'nav-admin',
-        group: 'Navigation',
-        label: 'Installer & Business Portal',
-        subtitle: 'Fleet health, diagnostics & SLA',
-        icon: <Wrench className="h-4 w-4" />,
-        onSelect: closeAnd(() => router.push('/admin')),
-      },
-      {
-        id: 'nav-auth',
-        group: 'Navigation',
-        label: 'Sign In / Switch Account',
-        subtitle: 'Phone OTP & Email/Google Auth',
-        icon: <KeyRound className="h-4 w-4" />,
-        onSelect: closeAnd(() => router.push('/auth')),
-      },
-    ];
+  const pwr01 = snapshot.devices['dd_pwr01_a1b2c3'];
+  const livingLightOn = Boolean(pwr01?.state.state.ch1);
 
-    const deviceItems: CommandItem[] = Object.values(snapshot.devices).map((dev) => ({
+  const items: CommandItem[] = [
+    // Navigation Routes
+    {
+      id: 'nav-home',
+      group: 'Navigation',
+      label: 'Home Dashboard',
+      subtitle: 'Rooms, Universal Layout Studio & 3D Twin',
+      icon: <Home className="h-4 w-4" />,
+      shortcut: 'G H',
+      onSelect: closeAnd(() => router.push('/')),
+    },
+    {
+      id: 'nav-vehicles',
+      group: 'Navigation',
+      label: 'Vehicles & Safety',
+      subtitle: 'Live MapLibre GPS, Crash SOS & Immobilizer',
+      icon: <Car className="h-4 w-4" />,
+      shortcut: 'G V',
+      onSelect: closeAnd(() => router.push('/vehicles')),
+    },
+    {
+      id: 'nav-automations',
+      group: 'Navigation',
+      label: 'Automations',
+      subtitle: '1-Tap Indian Recipes & G17 Pro Logic',
+      icon: <Sparkles className="h-4 w-4" />,
+      shortcut: 'G A',
+      onSelect: closeAnd(() => router.push('/automations')),
+    },
+    {
+      id: 'nav-setup',
+      group: 'Navigation',
+      label: 'Device Setup Wizard',
+      subtitle: 'QR / SoftAP 192.168.4.1 / Direct BLE',
+      icon: <PlusCircle className="h-4 w-4" />,
+      onSelect: closeAnd(() => router.push('/setup')),
+    },
+    {
+      id: 'nav-billing',
+      group: 'Navigation',
+      label: 'Billing & Core Floor',
+      subtitle: '90-Day Trial, UPI Renewal & Anti-Bricking Floor',
+      icon: <CreditCard className="h-4 w-4" />,
+      onSelect: closeAnd(() => router.push('/billing')),
+    },
+    {
+      id: 'nav-settings',
+      group: 'Navigation',
+      label: 'Settings & Tri-Color Studio',
+      subtitle: 'Themes, Haptics, Family Roles & Voice C2C',
+      icon: <Settings className="h-4 w-4" />,
+      onSelect: closeAnd(() => router.push('/settings')),
+    },
+    {
+      id: 'nav-admin',
+      group: 'Navigation',
+      label: 'Installer & Fleet Portal (/admin)',
+      subtitle: 'Fleet health, DFY 3D builder, Signed G5 OTA',
+      icon: <Wrench className="h-4 w-4" />,
+      onSelect: closeAnd(() => router.push('/admin')),
+    },
+    {
+      id: 'nav-auth',
+      group: 'Navigation',
+      label: 'Sign In / Switch Account',
+      subtitle: 'Phone OTP (+91) & Email/Google Auth',
+      icon: <KeyRound className="h-4 w-4" />,
+      onSelect: closeAnd(() => router.push('/auth')),
+    },
+
+    // Rooms from layout2D
+    ...prefs.layout2D.containers.map((c) => ({
+      id: `room-${c.id}`,
+      group: 'Rooms' as const,
+      label: c.title,
+      subtitle: `${c.itemIds.length} widgets/modules · ${c.kind.toUpperCase()}`,
+      icon: <LayoutGrid className="h-4 w-4" />,
+      onSelect: closeAnd(() => router.push('/')),
+    })),
+
+    // Quick Inline Hardware & Scene Actions
+    {
+      id: 'act-toggle-living-ch1',
+      group: 'Quick Actions',
+      label: livingLightOn ? 'Turn OFF Living Room Light (Ch1)' : 'Turn ON Living Room Light (Ch1)',
+      subtitle: 'Inline command · dd_pwr01_a1b2c3',
+      icon: <Zap className="h-4 w-4" />,
+      onSelect: closeAnd(() =>
+        simulatorEngine.sendCommand('dd_pwr01_a1b2c3', { ch1: !livingLightOn }, 'pwa_cloud')
+      ),
+    },
+    {
+      id: 'act-scene-inverter',
+      group: 'Quick Actions',
+      label: 'Run Scene: Inverter Saver (Cut Geyser)',
+      subtitle: 'Deterministic local rule trigger',
+      icon: <Play className="h-4 w-4" />,
+      onSelect: closeAnd(() =>
+        simulatorEngine.sendCommand('dd_pwr03_g7h8i9', { ch1: false }, 'rule')
+      ),
+    },
+    {
+      id: 'act-scene-tank',
+      group: 'Quick Actions',
+      label: 'Run Scene: Fill Overhead Tank (WAT-01)',
+      subtitle: 'Dry-run guard active',
+      icon: <Play className="h-4 w-4" />,
+      onSelect: closeAnd(() =>
+        simulatorEngine.sendCommand('dd_wat01_j1k2l3', { pump_on: true }, 'rule')
+      ),
+    },
+    {
+      id: 'act-local-port80',
+      group: 'Quick Actions',
+      label: 'Open Local Control (Hub Port 80)',
+      subtitle: LAN_TRANSPORT.HUB_LOCAL_URL,
+      icon: <ExternalLink className="h-4 w-4" />,
+      onSelect: closeAnd(() => {
+        if (typeof window !== 'undefined') {
+          window.open(LAN_TRANSPORT.HUB_LOCAL_URL, '_blank', 'noreferrer');
+        }
+      }),
+    },
+
+    // Devices
+    ...Object.values(snapshot.devices).map((dev) => ({
       id: `dev-${dev.device_id}`,
-      group: 'Devices',
+      group: 'Devices' as const,
       label: dev.name,
-      subtitle: `${dev.module_code} · ${dev.device_id}`,
+      subtitle: `${dev.module_code} · ${dev.device_id} · ${dev.state.rssi} dBm`,
       icon: <Cpu className="h-4 w-4" />,
       onSelect: closeAnd(() =>
         router.push(
@@ -135,50 +215,75 @@ export const CommandPalette: React.FC = () => {
             : `/devices/${dev.device_id}`
         )
       ),
-    }));
+    })),
 
-    const workspaceItems: CommandItem[] = [
-      {
-        id: 'theme-obsidian',
-        group: 'Workspace',
-        label: 'Theme: Obsidian Slate (Dark)',
-        icon: <Moon className="h-4 w-4" />,
-        onSelect: closeAnd(() => setTheme('obsidian')),
-      },
-      {
-        id: 'theme-alabaster',
-        group: 'Workspace',
-        label: 'Theme: Alabaster Daylight (Light)',
-        icon: <Sun className="h-4 w-4" />,
-        onSelect: closeAnd(() => setTheme('alabaster')),
-      },
-      {
-        id: 'density-toggle',
-        group: 'Workspace',
-        label:
-          prefs.density === 'compact'
-            ? 'Switch to Comfortable Density'
-            : 'Switch to Compact Density',
-        icon: <Sliders className="h-4 w-4" />,
-        onSelect: closeAnd(() =>
-          setDensity(prefs.density === 'compact' ? 'comfortable' : 'compact')
-        ),
-      },
-    ];
+    // Workspace & Tri-Color Presets
+    {
+      id: 'ws-edit-layout',
+      group: 'Workspace',
+      label: 'Toggle Customize Layout / Edit Mode',
+      subtitle: 'Cross-room & cross-container drag-and-drop',
+      icon: <LayoutGrid className="h-4 w-4" />,
+      shortcut: 'E',
+      onSelect: closeAnd(() => {
+        setEditLayoutMode((e) => !e);
+        router.push('/');
+      }),
+    },
+    {
+      id: 'preset-volt',
+      group: 'Workspace',
+      label: 'Palette: Volt Precision',
+      icon: <Palette className="h-4 w-4" />,
+      onSelect: closeAnd(() => setPalettePreset('volt_precision')),
+    },
+    {
+      id: 'preset-solar',
+      group: 'Workspace',
+      label: 'Palette: Solar Obsidian',
+      icon: <Palette className="h-4 w-4" />,
+      onSelect: closeAnd(() => setPalettePreset('solar_obsidian')),
+    },
+    {
+      id: 'preset-bio',
+      group: 'Workspace',
+      label: 'Palette: Bio Circuit',
+      icon: <Palette className="h-4 w-4" />,
+      onSelect: closeAnd(() => setPalettePreset('bio_circuit')),
+    },
+    {
+      id: 'theme-obsidian',
+      group: 'Workspace',
+      label: 'Theme: Obsidian Slate (Dark)',
+      icon: <Moon className="h-4 w-4" />,
+      onSelect: closeAnd(() => setTheme('obsidian')),
+    },
+    {
+      id: 'theme-alabaster',
+      group: 'Workspace',
+      label: 'Theme: Alabaster Daylight (Light)',
+      icon: <Sun className="h-4 w-4" />,
+      onSelect: closeAnd(() => setTheme('alabaster')),
+    },
+    {
+      id: 'density-toggle',
+      group: 'Workspace',
+      label:
+        prefs.density === 'compact'
+          ? 'Switch to Comfortable Density'
+          : 'Switch to Compact Density',
+      icon: <Sliders className="h-4 w-4" />,
+      onSelect: closeAnd(() =>
+        setDensity(prefs.density === 'compact' ? 'comfortable' : 'compact')
+      ),
+    },
+  ];
 
-    return [...navItems, ...deviceItems, ...workspaceItems];
-  }, [router, snapshot.devices, prefs.density, setTheme, setDensity, setCommandPaletteOpen]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (item) =>
-        item.label.toLowerCase().includes(q) ||
-        (item.subtitle && item.subtitle.toLowerCase().includes(q)) ||
-        item.group.toLowerCase().includes(q)
-    );
-  }, [items, query]);
+  const filtered = query.trim()
+    ? items.filter((item) =>
+        fuzzyMatch(`${item.group} ${item.label} ${item.subtitle ?? ''}`, query)
+      )
+    : items;
 
   const safeActiveIdx = filtered.length ? Math.min(activeIdx, filtered.length - 1) : 0;
 
@@ -206,7 +311,7 @@ export const CommandPalette: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-xs p-4 pt-[12vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-xs p-4 pt-[10vh]"
       onMouseDown={() => setCommandPaletteOpen(false)}
     >
       <div
@@ -216,7 +321,6 @@ export const CommandPalette: React.FC = () => {
         onMouseDown={(e) => e.stopPropagation()}
         className="w-full max-w-lg rounded-[var(--dd-radius-card)] border border-border-strong bg-surface shadow-2xl overflow-hidden"
       >
-        {/* Search Input */}
         <div className="flex items-center gap-2.5 border-b border-border px-3.5 py-3 bg-surface-elevated">
           <Search className="h-4 w-4 text-foreground-muted shrink-0" />
           <input
@@ -227,7 +331,7 @@ export const CommandPalette: React.FC = () => {
               setQuery(e.target.value);
               setActiveIdx(0);
             }}
-            placeholder="Jump to route, device, theme, or action..."
+            placeholder="Fuzzy search rooms, 42+ modules, scenes, presets, or /admin..."
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-foreground-muted focus:outline-none"
           />
           <kbd className="hidden sm:inline-flex items-center rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-foreground-muted">
@@ -243,12 +347,14 @@ export const CommandPalette: React.FC = () => {
           </button>
         </div>
 
-        {/* Results */}
-        <div className="max-h-[55vh] overflow-y-auto p-1.5 dd-scroll">
+        <div className="max-h-[56vh] overflow-y-auto p-2 dd-scroll">
           {filtered.length === 0 ? (
-            <div className="py-10 text-center text-xs text-foreground-muted">
-              No matching routes, devices, or commands.
-            </div>
+            <EmptyState
+              compact
+              icon={<Search className="h-4 w-4" />}
+              title="No matching results"
+              description={`Nothing matched "${query}". Try a module code (PWR-01, WAT-01), room, or route.`}
+            />
           ) : (
             filtered.map((item, idx) => {
               const active = idx === safeActiveIdx;
@@ -259,7 +365,7 @@ export const CommandPalette: React.FC = () => {
                   onMouseEnter={() => setActiveIdx(idx)}
                   onClick={item.onSelect}
                   className={cn(
-                    'w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors cursor-pointer',
+                    'w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors cursor-pointer',
                     active
                       ? 'bg-accent-soft text-foreground border border-accent-border'
                       : 'text-foreground-secondary hover:bg-surface-muted border border-transparent'
@@ -295,7 +401,7 @@ export const CommandPalette: React.FC = () => {
         </div>
 
         <div className="flex items-center justify-between border-t border-border bg-surface-elevated px-3.5 py-2 text-[10px] font-mono text-foreground-muted">
-          <span>↑↓ Navigate · ↵ Open · Esc Close</span>
+          <span>↑↓ Navigate · ↵ Run · Esc Close</span>
           <span>DD oodle v1.4</span>
         </div>
       </div>
