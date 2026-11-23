@@ -161,10 +161,10 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
   return (
     <article
       className={cn(
-        'rounded-[var(--dd-radius-card)] border bg-surface p-[var(--dd-card-pad)] transition-colors space-y-3',
+        'rounded-2xl border bg-surface p-3 sm:p-3.5 transition-colors space-y-2.5',
         hasLatchedFault
           ? 'border-danger/70 ring-1 ring-danger/25'
-          : 'border-border hover:border-border-strong'
+          : 'hairline-border hover:border-border-strong'
       )}
     >
       {/* Header Row */}
@@ -172,9 +172,9 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Badge variant="accent">{device.module_code}</Badge>
-            <Badge variant="mono" className="text-[10px]">
+            <span className="text-[10px] font-mono text-foreground-muted tabular-nums">
               {device.state.rssi} dBm
-            </Badge>
+            </span>
             {device.state.ack && (
               <Badge variant="success" className="text-[10px]">
                 ACK
@@ -186,7 +186,7 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
               </Badge>
             )}
           </div>
-          <h3 className="mt-1.5 text-sm font-semibold tracking-tight text-foreground truncate">
+          <h3 className="mt-1 text-sm font-semibold tracking-tight text-foreground truncate">
             {device.name}
           </h3>
         </div>
@@ -198,24 +198,24 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
               onClick={() => onInspect(device.device_id)}
               title="Open Quick Inspector"
               aria-label={`Inspect ${device.name}`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-surface-elevated text-foreground-secondary hover:text-accent hover:border-accent-border transition-colors cursor-pointer"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 bg-surface-elevated text-foreground-secondary hover:text-accent hover:border-accent-border transition-colors cursor-pointer"
             >
               <Eye className="h-3.5 w-3.5" />
             </button>
           )}
-          {onOpenLocalAccess && (
-            <button
-              type="button"
-              onClick={() => onOpenLocalAccess(device.device_id, device.local_pin)}
-              title="Local LAN Access & G7 PIN"
-              aria-label={`Local access for ${device.name}`}
-              className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 text-[11px] font-mono text-foreground-secondary hover:text-foreground hover:border-border-strong transition-colors cursor-pointer"
-            >
-              <KeyRound className="h-3 w-3" />
-              <span className="hidden sm:inline">LAN</span>
-              <ExternalLink className="h-3 w-3" />
-            </button>
-          )}
+          <a
+            href={
+              device.module_code === 'VEH-01'
+                ? `/vehicles/${device.device_id}`
+                : `/devices/${device.device_id}`
+            }
+            title="Open Device Detail & Settings"
+            aria-label={`Open full details for ${device.name}`}
+            className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/70 bg-surface-elevated px-2 text-[10px] font-mono text-foreground-secondary hover:text-foreground hover:border-border-strong transition-colors"
+          >
+            <span>Detail</span>
+            <ExternalLink className="h-2.5 w-2.5" />
+          </a>
         </div>
       </div>
 

@@ -352,14 +352,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Detect active life-safety critical conditions across all devices & crash SOS
   const { isLifeSafetyActive, lifeSafetyReason } = computeLifeSafetyStatus(snapshot);
   const resolvedLightMode =
-    !isLifeSafetyActive && (prefs.theme === 'alabaster' || (prefs.theme === 'system' && systemPrefersLight));
+    prefs.theme === 'alabaster' || (prefs.theme === 'system' && systemPrefersLight);
   const activePalette = resolveActivePalette(
     prefs.palettePreset,
     prefs.customPalette,
     resolvedLightMode
   );
 
-  // Apply theme, tri-color palette, density, motion, <meta name="theme-color">, and life-safety override
+  // Apply theme, tri-color palette, density, motion, and <meta name="theme-color">
+  // Phase 8 rule: NEVER override the full viewport with red during alerts; FloatingEmergencyAlert handles alert surfacing cleanly.
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const root = document.documentElement;
@@ -369,28 +370,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     root.dataset.density = prefs.density;
     root.dataset.motion = prefs.motionMode;
 
-    if (isLifeSafetyActive) {
-      root.dataset.lifeSafety = 'critical';
-      root.classList.add('life-safety-override');
-    } else {
-      delete root.dataset.lifeSafety;
-      root.classList.remove('life-safety-override');
-    }
+    delete root.dataset.lifeSafety;
+    root.classList.remove('life-safety-override');
 
     const cssVars = buildTriColorCssVars(activePalette, resolvedLightMode);
     for (const [key, val] of Object.entries(cssVars)) {
-      if (isLifeSafetyActive) {
-        root.style.removeProperty(key);
-      } else {
-        root.style.setProperty(key, val);
-      }
+      root.style.setProperty(key, val);
     }
 
-    const themeColor = isLifeSafetyActive
-      ? '#140407'
-      : resolvedLightMode
-      ? '#f4f6f9'
-      : '#090b0f';
+    const themeColor = resolvedLightMode ? '#f4f6f9' : '#090b0f';
     let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
     if (!meta) {
       meta = document.createElement('meta');
@@ -406,7 +394,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     prefs.motionMode,
     activePalette,
     resolvedLightMode,
-    isLifeSafetyActive,
   ]);
 
   // Global Cmd/Ctrl+K shortcut for Command Palette

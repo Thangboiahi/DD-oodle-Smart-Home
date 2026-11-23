@@ -9,11 +9,13 @@ import {
   Box,
   Check,
   CheckCircle2,
+  ChevronDown,
   Cpu,
   Home,
   QrCode,
   Radio,
   ShieldCheck,
+  Sliders,
   Wifi,
 } from 'lucide-react';
 import { OperationMode, Phase1ModuleCode } from '@/lib/protocol/contract';
@@ -31,12 +33,13 @@ import {
   useToast,
 } from '@/components/ui';
 import { useWorkspace } from '@/components/workspace';
+import { cn } from '@/lib/utils';
 
 const STEPS = [
-  { id: 1, title: 'QR / Module ID', short: 'Identify' },
-  { id: 2, title: 'SoftAP / BLE Provision', short: 'Provision' },
-  { id: 3, title: 'Capability Handshake', short: 'Handshake' },
-  { id: 4, title: 'Room & 3D Pin', short: 'Assign' },
+  { id: 1, title: 'QR / Module ID', short: '1. Identify' },
+  { id: 2, title: 'SoftAP / BLE Provision', short: '2. Wi-Fi' },
+  { id: 3, title: 'Capability Handshake', short: '3. Verify' },
+  { id: 4, title: 'Room & 3D Pin', short: '4. Assign' },
 ] as const;
 
 const ROOM_OPTIONS = [
@@ -60,10 +63,11 @@ export default function DeviceSetupPage() {
   const [ssid, setSsid] = useState('Imphal-Home-2.4G');
   const [wifiPass, setWifiPass] = useState('');
   const [opMode, setOpMode] = useState<OperationMode>('CLOUD_DIRECT');
+  const [showAdvancedProv, setShowAdvancedProv] = useState(false);
   const [handshakeVerified, setHandshakeVerified] = useState(false);
 
   const [assignedRoom, setAssignedRoom] = useState('room_living');
-  const [place3DPin, setPlace3DPin] = useState(true);
+  const [place3DPin, setPlace3DPin] = useState(false);
   const [pinX, setPinX] = useState(2.4);
   const [pinZ, setPinZ] = useState(1.8);
   const [completed, setCompleted] = useState(false);
@@ -106,17 +110,21 @@ export default function DeviceSetupPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">
-          Device Setup &amp; Commissioning Wizard
-        </h1>
-        <p className="text-xs text-foreground-secondary">
-          4-step zero-cloud-lock-in onboarding over SoftAP ({SOFTAP_TRANSPORT.GATEWAY_IP}) or Direct BLE GATT.
-        </p>
+    <div className="max-w-xl mx-auto space-y-3">
+      {/* Compact Header */}
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h1 className="text-base sm:text-lg font-semibold tracking-tight text-foreground">
+            Commission New Hardware
+          </h1>
+          <p className="text-xs text-foreground-secondary">
+            Zero-cloud-lock-in setup via SoftAP ({SOFTAP_TRANSPORT.GATEWAY_IP}) or Direct BLE.
+          </p>
+        </div>
+        <Badge variant="mono">v1.4</Badge>
       </div>
 
-      {/* Mobile-First Progress Stepper */}
+      {/* Slim Horizontal Stepper Bar */}
       <ol className="grid grid-cols-4 gap-1.5">
         {STEPS.map((s) => {
           const active = s.id === step;
@@ -126,20 +134,18 @@ export default function DeviceSetupPage() {
               <button
                 type="button"
                 onClick={() => setStep(s.id)}
-                className={`w-full rounded-[var(--dd-radius-control)] border px-2 py-2 text-left transition-colors cursor-pointer ${
+                className={cn(
+                  'w-full rounded-xl border px-2.5 py-2 text-left transition-colors cursor-pointer',
                   active
                     ? 'border-accent-border bg-accent-soft text-accent'
                     : done
                     ? 'border-success/40 bg-success-soft text-success'
-                    : 'border-border bg-surface text-foreground-muted'
-                }`}
+                    : 'hairline-border bg-surface text-foreground-muted'
+                )}
               >
-                <div className="flex items-center gap-1.5 text-[10px] font-mono">
-                  {done ? <Check className="h-3 w-3" /> : <span>0{s.id}</span>}
-                  <span className="truncate font-semibold">{s.short}</span>
-                </div>
-                <div className="hidden sm:block text-[11px] font-medium truncate mt-0.5 text-foreground">
-                  {s.title}
+                <div className="flex items-center gap-1 text-[11px] font-mono font-semibold">
+                  {done && <Check className="h-3 w-3 shrink-0" />}
+                  <span className="truncate">{s.short}</span>
                 </div>
               </button>
             </li>
@@ -149,15 +155,15 @@ export default function DeviceSetupPage() {
 
       {/* STEP 1: QR Scan / Manual ID */}
       {step === 1 && (
-        <Card>
+        <Card className="rounded-2xl hairline-border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
               <QrCode className="h-4 w-4 text-accent" />
-              <span>Step 1 · Scan Enclosure QR or Enter Module ID</span>
+              <span>Scan Enclosure QR or Enter Module ID</span>
             </CardTitle>
-            <Badge variant="mono">G7 PIN REQUIRED</Badge>
+            <Badge variant="mono">G7 PIN</Badge>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3.5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="space-y-1 text-xs">
                 <span className="text-foreground-secondary font-medium">Device ID (MQTT Safe)</span>
@@ -165,7 +171,7 @@ export default function DeviceSetupPage() {
                   type="text"
                   value={deviceId}
                   onChange={(e) => setDeviceId(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
-                  className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground focus:outline-none focus:border-accent"
+                  className="w-full h-10 rounded-xl border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground focus:outline-none focus:border-accent"
                 />
               </label>
 
@@ -178,7 +184,7 @@ export default function DeviceSetupPage() {
                   options={[
                     { value: 'PWR-01', label: 'PWR-01 · 4-Ch Switchboard' },
                     { value: 'PWR-02', label: 'PWR-02 · Fan & Dimmer' },
-                    { value: 'PWR-03', label: 'PWR-03 · 25A Heavy Appliance' },
+                    { value: 'PWR-03', label: 'PWR-03 · 16A/25A Heavy' },
                     { value: 'WAT-01', label: 'WAT-01 · Tank & Pump Guard' },
                     { value: 'VEH-01', label: 'VEH-01 · Vehicle Safety' },
                     { value: 'HUB-01', label: 'HUB-01 · Local Offline Hub' },
@@ -189,14 +195,14 @@ export default function DeviceSetupPage() {
 
             <OtpPinInput
               length={8}
-              label="G7 8-Digit Local Device PIN (Printed on QR Sticker)"
+              label="G7 8-Digit Local Device PIN (Printed on Enclosure QR)"
               value={localPin}
               onChange={setLocalPin}
             />
 
-            <div className="flex justify-end pt-2 border-t border-border">
+            <div className="flex justify-end pt-2 border-t hairline-border">
               <Button variant="primary" touchTarget onClick={() => setStep(2)}>
-                <span>Continue to Provisioning</span>
+                <span>Next: Wi-Fi &amp; Local Key</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -204,21 +210,23 @@ export default function DeviceSetupPage() {
         </Card>
       )}
 
-      {/* STEP 2: SoftAP / BLE Provisioning */}
+      {/* STEP 2: SoftAP / BLE Provisioning (with Collapsible Advanced Section) */}
       {step === 2 && (
-        <Card>
+        <Card className="rounded-2xl hairline-border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
               {transportMethod === 'softap' ? (
                 <Wifi className="h-4 w-4 text-accent" />
               ) : (
                 <Bluetooth className="h-4 w-4 text-warning" />
               )}
-              <span>Step 2 · Provision Wi-Fi &amp; Local Key</span>
+              <span>Provision Wi-Fi &amp; Local Key</span>
             </CardTitle>
-            <Badge variant="accent">FROZEN TRANSPORT</Badge>
+            <Badge variant="accent">
+              {transportMethod === 'softap' ? SOFTAP_TRANSPORT.GATEWAY_IP : 'BLE GATT'}
+            </Badge>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3.5">
             <SegmentedControl<'softap' | 'ble'>
               fullWidth
               ariaLabel="Provisioning transport"
@@ -230,24 +238,6 @@ export default function DeviceSetupPage() {
               ]}
             />
 
-            <div className="rounded-lg border border-border bg-surface-elevated p-3 text-[11px] font-mono text-foreground-secondary space-y-1">
-              {transportMethod === 'softap' ? (
-                <>
-                  <div>
-                    1. Join Wi-Fi SSID: <strong className="text-foreground">{SOFTAP_TRANSPORT.SSID_PREFIX}{deviceId.slice(-4).toUpperCase()}</strong>
-                  </div>
-                  <div>
-                    2. Dispatch <strong className="text-accent">POST {SOFTAP_TRANSPORT.BASE_URL}{SOFTAP_TRANSPORT.PROVISION_ENDPOINT}</strong>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>Service: <strong className="text-foreground">{BLE_GATT.SERVICE_NAME}</strong></div>
-                  <div className="truncate">UUID: <strong className="text-accent">{BLE_GATT.SERVICE_UUID}</strong></div>
-                </>
-              )}
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="space-y-1 text-xs">
                 <span className="text-foreground-secondary font-medium">2.4 GHz Home Wi-Fi SSID</span>
@@ -255,7 +245,7 @@ export default function DeviceSetupPage() {
                   type="text"
                   value={ssid}
                   onChange={(e) => setSsid(e.target.value)}
-                  className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 text-xs text-foreground focus:outline-none focus:border-accent"
+                  className="w-full h-10 rounded-xl border border-border bg-surface-elevated px-3 text-xs text-foreground focus:outline-none focus:border-accent"
                 />
               </label>
               <label className="space-y-1 text-xs">
@@ -265,32 +255,76 @@ export default function DeviceSetupPage() {
                   value={wifiPass}
                   onChange={(e) => setWifiPass(e.target.value)}
                   placeholder="Enter home Wi-Fi password"
-                  className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 text-xs text-foreground focus:outline-none focus:border-accent"
+                  className="w-full h-10 rounded-xl border border-border bg-surface-elevated px-3 text-xs text-foreground focus:outline-none focus:border-accent"
                 />
               </label>
             </div>
 
-            <div className="space-y-1 text-xs">
-              <span className="text-foreground-secondary font-medium block">Initial Operation Mode (Optional)</span>
-              <Dropdown
-                ariaLabel="Initial operation mode"
-                value={opMode}
-                onChange={(v) => setOpMode(v as OperationMode)}
-                options={[
-                  { value: 'CLOUD_DIRECT', label: 'CLOUD_DIRECT (Recommended)' },
-                  { value: 'LOCAL_HUB', label: 'LOCAL_HUB (Offline Hub)' },
-                  { value: 'LAN_ONLY', label: 'LAN_ONLY (Zero Cloud)' },
-                  { value: 'BLE_ONLY', label: 'BLE_ONLY (Bluetooth Direct)' },
-                ]}
-              />
+            {/* Collapsible Advanced Provisioning & Raw Payload Disclosure */}
+            <div className="rounded-xl border hairline-border bg-surface-elevated/40 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedProv((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs text-foreground-secondary hover:text-foreground cursor-pointer"
+              >
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <Sliders className="h-3.5 w-3.5 text-accent" />
+                  <span>Advanced Options (Operation Mode &amp; Wire Payload)</span>
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 transition-transform duration-150',
+                    showAdvancedProv && 'rotate-180'
+                  )}
+                />
+              </button>
+
+              {showAdvancedProv && (
+                <div className="p-3 pt-2 border-t hairline-border space-y-3 text-xs">
+                  <div className="space-y-1">
+                    <span className="text-foreground-secondary font-medium block">
+                      Initial Operation Mode (`operation_mode`)
+                    </span>
+                    <Dropdown
+                      ariaLabel="Initial operation mode"
+                      value={opMode}
+                      onChange={(v) => setOpMode(v as OperationMode)}
+                      options={[
+                        { value: 'CLOUD_DIRECT', label: 'CLOUD_DIRECT (Recommended)' },
+                        { value: 'LOCAL_HUB', label: 'LOCAL_HUB (Offline Hub)' },
+                        { value: 'LAN_ONLY', label: 'LAN_ONLY (Zero Cloud)' },
+                        { value: 'BLE_ONLY', label: 'BLE_ONLY (Bluetooth Direct)' },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="rounded-xl border hairline-border bg-surface p-2.5 text-[11px] font-mono text-foreground-secondary space-y-1">
+                    {transportMethod === 'softap' ? (
+                      <>
+                        <div>
+                          SSID: <strong className="text-foreground">{SOFTAP_TRANSPORT.SSID_PREFIX}{deviceId.slice(-4).toUpperCase()}</strong>
+                        </div>
+                        <div>
+                          Route: <strong className="text-accent">POST {SOFTAP_TRANSPORT.BASE_URL}{SOFTAP_TRANSPORT.PROVISION_ENDPOINT}</strong>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>Service: <strong className="text-foreground">{BLE_GATT.SERVICE_NAME}</strong></div>
+                        <div className="truncate">UUID: <strong className="text-accent">{BLE_GATT.SERVICE_UUID}</strong></div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border hairline-border bg-canvas p-2.5 font-mono text-[10px] text-foreground-muted overflow-x-auto dd-scroll">
+                    <div className="text-foreground-secondary mb-1">POST /api/v1/prov Payload:</div>
+                    <pre>{JSON.stringify(provisionPayload, null, 2)}</pre>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="rounded-lg border border-border bg-canvas p-2.5 font-mono text-[10px] text-foreground-muted overflow-x-auto dd-scroll">
-              <div className="text-foreground-secondary mb-1">POST /api/v1/prov Payload Preview:</div>
-              <pre>{JSON.stringify(provisionPayload, null, 2)}</pre>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-border">
+            <div className="flex items-center justify-between pt-2 border-t hairline-border">
               <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
                 <ArrowLeft className="h-3.5 w-3.5" />
                 <span>Back</span>
@@ -317,19 +351,19 @@ export default function DeviceSetupPage() {
 
       {/* STEP 3: Capability Handshake (.../info verification) */}
       {step === 3 && (
-        <Card>
+        <Card className="rounded-2xl hairline-border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
               <Cpu className="h-4 w-4 text-accent" />
-              <span>Step 3 · Capability Handshake (`.../info`)</span>
+              <span>Capability Handshake (`.../info`)</span>
             </CardTitle>
             <Badge variant={handshakeVerified ? 'success' : 'warning'}>
-              {handshakeVerified ? 'SCHEMA v1.4 VERIFIED' : 'AWAITING INFO'}
+              {handshakeVerified ? 'VERIFIED' : 'AWAITING'}
             </Badge>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-lg border border-border bg-surface-elevated p-3 font-mono text-[11px] space-y-1">
-              <div className="text-foreground-muted">
+          <CardContent className="space-y-3.5">
+            <div className="rounded-xl border hairline-border bg-surface-elevated/60 p-3 font-mono text-[11px] space-y-1">
+              <div className="text-foreground-muted truncate">
                 Topic: <span className="text-accent">ddoodle/{activeHome.id}/{deviceId}/info</span>
               </div>
               <div className="text-foreground-secondary">
@@ -341,13 +375,13 @@ export default function DeviceSetupPage() {
               <div className="text-xs font-medium text-foreground-secondary">
                 Discovered `capabilities[]` ({discoveredInfo?.capabilities.length ?? 0})
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {discoveredInfo?.capabilities.map((cap) => (
                   <div
                     key={cap.key}
-                    className="flex items-center justify-between rounded-md border border-border bg-surface-elevated px-3 py-2 text-xs"
+                    className="flex items-center justify-between rounded-xl border hairline-border bg-surface-elevated/50 px-3 py-2 text-xs"
                   >
-                    <span className="font-medium text-foreground">{cap.label}</span>
+                    <span className="font-medium text-foreground truncate">{cap.label}</span>
                     <Badge variant={cap.type === 'sensor' ? 'mono' : 'accent'}>{cap.type}</Badge>
                   </div>
                 ))}
@@ -361,7 +395,7 @@ export default function DeviceSetupPage() {
               </Button>
             )}
 
-            <div className="flex items-center justify-between pt-2 border-t border-border">
+            <div className="flex items-center justify-between pt-2 border-t hairline-border">
               <Button variant="ghost" size="sm" onClick={() => setStep(2)}>
                 <ArrowLeft className="h-3.5 w-3.5" />
                 <span>Back</span>
@@ -372,7 +406,7 @@ export default function DeviceSetupPage() {
                 disabled={!handshakeVerified}
                 onClick={() => setStep(4)}
               >
-                <span>Assign Room &amp; 3D Pin</span>
+                <span>Next: Assign Room</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -382,15 +416,15 @@ export default function DeviceSetupPage() {
 
       {/* STEP 4: Room Assignment & Optional 3D Pin Placement */}
       {step === 4 && (
-        <Card>
+        <Card className="rounded-2xl hairline-border">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
               <Home className="h-4 w-4 text-accent" />
-              <span>Step 4 · Room Assignment &amp; Optional 3D Pin</span>
+              <span>Assign Room &amp; Finish</span>
             </CardTitle>
             <Badge variant="mono">{activeHome.name}</Badge>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3.5">
             <div className="space-y-1 text-xs">
               <span className="text-foreground-secondary font-medium block">Assign to Room</span>
               <Dropdown
@@ -401,41 +435,42 @@ export default function DeviceSetupPage() {
               />
             </div>
 
-            <div className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 space-y-3">
+            {/* Optional 3D Pin Placement Disclosure */}
+            <div className="rounded-xl border hairline-border bg-surface-elevated/40 p-3 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-medium text-foreground">
                   <Box className="h-4 w-4 text-accent" />
-                  <span>Place Pin on 3D Home Twin (Optional)</span>
+                  <span>3D Home Twin Coordinates (Optional)</span>
                 </div>
                 <Button
                   variant={place3DPin ? 'accent' : 'secondary'}
                   size="sm"
                   onClick={() => setPlace3DPin((p) => !p)}
                 >
-                  {place3DPin ? 'Enabled' : 'Skip 3D Pin'}
+                  {place3DPin ? 'Enabled' : 'Configure 3D Pin'}
                 </Button>
               </div>
 
               {place3DPin && (
-                <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+                <div className="grid grid-cols-2 gap-2.5 text-xs font-mono pt-1">
                   <label className="space-y-1">
-                    <span className="text-foreground-muted text-[10px]">FLOOR X (meters)</span>
+                    <span className="text-foreground-muted text-[10px]">FLOOR X (m)</span>
                     <input
                       type="number"
                       step="0.2"
                       value={pinX}
                       onChange={(e) => setPinX(Number(e.target.value))}
-                      className="w-full h-9 rounded border border-border bg-surface px-2.5 text-foreground tabular-nums"
+                      className="w-full h-9 rounded-lg border border-border bg-surface px-2.5 text-foreground tabular-nums"
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-foreground-muted text-[10px]">FLOOR Z (meters)</span>
+                    <span className="text-foreground-muted text-[10px]">FLOOR Z (m)</span>
                     <input
                       type="number"
                       step="0.2"
                       value={pinZ}
                       onChange={(e) => setPinZ(Number(e.target.value))}
-                      className="w-full h-9 rounded border border-border bg-surface px-2.5 text-foreground tabular-nums"
+                      className="w-full h-9 rounded-lg border border-border bg-surface px-2.5 text-foreground tabular-nums"
                     />
                   </label>
                 </div>
@@ -443,12 +478,12 @@ export default function DeviceSetupPage() {
             </div>
 
             {completed ? (
-              <div className="rounded-lg border border-success/40 bg-success-soft p-3.5 space-y-3 text-xs">
+              <div className="rounded-xl border border-success/40 bg-success-soft p-3.5 space-y-3 text-xs">
                 <div className="flex items-center gap-2 font-semibold text-success">
                   <CheckCircle2 className="h-4 w-4" />
                   <span>Device Commissioned Successfully!</span>
                 </div>
-                <p className="text-foreground-secondary">
+                <p className="text-foreground-secondary leading-relaxed">
                   <strong>{deviceId}</strong> ({moduleCode}) is bound to <strong>{assignedRoom}</strong>. Local Port 80 + BLE remain active forever under Core Floor.
                 </p>
                 <Link href="/">
@@ -458,7 +493,7 @@ export default function DeviceSetupPage() {
                 </Link>
               </div>
             ) : (
-              <div className="flex items-center justify-between pt-2 border-t border-border">
+              <div className="flex items-center justify-between pt-2 border-t hairline-border">
                 <Button variant="ghost" size="sm" onClick={() => setStep(3)}>
                   <ArrowLeft className="h-3.5 w-3.5" />
                   <span>Back</span>

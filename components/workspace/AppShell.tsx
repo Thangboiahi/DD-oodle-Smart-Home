@@ -39,6 +39,8 @@ import { AppBootSplash } from '@/components/brand/AppBootSplash';
 import { QuickThemePopover } from '@/components/theme/CustomTriColorStudio';
 import { PwaLifecycleManager } from '@/components/pwa/PwaLifecycleManager';
 import { AlertInboxDrawer, AlertInboxEntry } from './AlertInboxDrawer';
+import { SmartStickyHeader } from './SmartStickyHeader';
+import { FloatingEmergencyAlert } from '@/components/safety/FloatingEmergencyAlert';
 import { simulatorEngine } from '@/lib/simulator/engine';
 
 interface NavEntry {
@@ -442,151 +444,23 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           </div>
         </aside>
 
+        {/* Phase 8: Floating + Auto-Docking Emergency Alert System & Cause/Recovery Sheet */}
+        <FloatingEmergencyAlert />
+
         {/* Main Column */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Compact Sticky Top Utility Bar */}
-          <header className="sticky top-0 z-30 h-14 border-b border-border dd-glass px-3 sm:px-5 flex items-center justify-between gap-2">
-            {/* Left: Mobile Brand / Back / Breadcrumbs / Home Switcher */}
-            <div className="flex items-center gap-2 min-w-0">
-              {isNestedRoute && (
-                <button
-                  type="button"
-                  onClick={() => router.back()}
-                  aria-label="Go back"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-surface-elevated text-foreground-secondary hover:text-foreground cursor-pointer shrink-0"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </button>
-              )}
-
-              {/* Mobile Brand Mark */}
-              <Link href="/" className="md:hidden flex items-center shrink-0">
-                <DDoodleLogo size="sm" animated={!isEcoMotion} />
-              </Link>
-
-              {/* Home Switcher Dropdown */}
-              <Dropdown
-                ariaLabel="Select active home"
-                value={activeHome.id}
-                onChange={setActiveHomeId}
-                triggerClassName="h-8 min-h-0 px-2.5 text-xs max-w-[155px] sm:max-w-[200px]"
-                options={homes.map((h) => ({
-                  value: h.id,
-                  label: h.name,
-                  description: h.location,
-                  badge: h.hubStatus === 'online' ? 'LIVE' : 'LAN',
-                  icon: <Home className="h-3.5 w-3.5" />,
-                }))}
-              />
-
-              {/* Tablet/Desktop Breadcrumbs */}
-              <nav aria-label="Breadcrumb" className="hidden md:flex items-center gap-1 text-xs text-foreground-muted ml-1 min-w-0">
-                {breadcrumbs.map((crumb, idx) => {
-                  const isLast = idx === breadcrumbs.length - 1;
-                  return (
-                    <React.Fragment key={crumb.href}>
-                      {idx > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-50" />}
-                      {isLast ? (
-                        <span className="font-medium text-foreground truncate max-w-[160px]">
-                          {crumb.label}
-                        </span>
-                      ) : (
-                        <Link
-                          href={crumb.href}
-                          className="hover:text-foreground transition-colors truncate"
-                        >
-                          {crumb.label}
-                        </Link>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </nav>
-            </div>
-
-            {/* Right: Quick-Jump Search, Connectivity Pill, Alert Bell */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* Command Palette Trigger */}
-              <button
-                type="button"
-                onClick={() => setCommandPaletteOpen(true)}
-                aria-label="Open quick search"
-                className="inline-flex items-center gap-2 h-8 px-2 sm:px-2.5 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated hover:border-border-strong text-xs text-foreground-secondary hover:text-foreground transition-colors cursor-pointer"
-              >
-                <Search className="h-3.5 w-3.5" />
-                <span className="hidden xl:inline text-[11px]">Quick Jump</span>
-                <kbd className="hidden sm:inline-flex rounded border border-border bg-surface px-1 py-0.2 font-mono text-[10px] text-foreground-muted">
-                  ⌘K
-                </kbd>
-              </button>
-
-              {/* Desktop Keyboard Shortcuts Button (?) */}
-              <button
-                type="button"
-                onClick={() => setShortcutsOpen(true)}
-                aria-label="Keyboard shortcuts"
-                title="Keyboard Shortcuts (?)"
-                className="hidden lg:inline-flex items-center justify-center h-8 w-8 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated hover:border-border-strong text-foreground-secondary hover:text-foreground transition-colors cursor-pointer"
-              >
-                <Keyboard className="h-3.5 w-3.5" />
-              </button>
-
-              {/* Quick Tri-Color Theme Popover */}
-              <QuickThemePopover />
-
-              {/* 4-Tier Connectivity Status Pill */}
-              <StatusPill
-                transport={snapshot.activeTransport}
-                homeId={snapshot.home_id}
-                lastSyncTs={lastSyncTs}
-                onModeSelect={(mode) => simulatorEngine.setTransportModeOverride(mode)}
-              />
-
-              {/* Alert Bell -> Slide-Over Alert Inbox Drawer */}
-              <button
-                type="button"
-                onClick={() => setAlertsOpen(true)}
-                aria-label="Open Alert Center"
-                className={cn(
-                  'relative inline-flex h-8 w-8 items-center justify-center rounded-[var(--dd-radius-control)] border transition-colors cursor-pointer',
-                  isLifeSafetyActive
-                    ? 'border-danger bg-danger-soft text-danger'
-                    : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground hover:border-border-strong'
-                )}
-              >
-                <Bell className="h-4 w-4" />
-                {unreadAlertsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white font-mono text-[9px] font-bold flex items-center justify-center tabular-nums">
-                    {unreadAlertsCount}
-                  </span>
-                )}
-              </button>
-            </div>
-          </header>
-
-          {/* Life-Safety High-Contrast Emergency Override Bar */}
-          {isLifeSafetyActive && (
-            <div
-              role="alert"
-              className="w-full bg-danger text-white px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold border-b border-white/20"
-            >
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4 shrink-0 animate-pulse" />
-                <span>HIGH-CONTRAST LIFE-SAFETY OVERRIDE ACTIVE</span>
-                {lifeSafetyReason && (
-                  <span className="font-mono text-[11px] bg-black/30 px-2 py-0.5 rounded">
-                    {lifeSafetyReason}
-                  </span>
-                )}
-              </div>
-              <Link
-                href="/vehicles"
-                className="underline font-mono text-[11px] hover:opacity-90"
-              >
-                Inspect Safety Console →
-              </Link>
-            </div>
-          )}
+          {/* Phase 8: Rock-Solid Low-Sensitivity Scroll-Aware Sticky Header */}
+          <SmartStickyHeader
+            homes={homes}
+            activeHome={activeHome}
+            onSelectHome={setActiveHomeId}
+            unreadAlertsCount={unreadAlertsCount}
+            hasActiveFaultOrCritical={isLifeSafetyActive || activeAlerts.length > 0}
+            lastSyncTs={lastSyncTs}
+            onOpenAlertInbox={() => setAlertsOpen(true)}
+            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
+          />
 
           {/* Offline / Local Access Banner */}
           <OfflineBanner
@@ -594,13 +468,14 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             onSelectMode={(mode) => simulatorEngine.setTransportModeOverride(mode)}
           />
 
-          {/* Page Content with non-blocking GPU-composited entrance */}
+          {/* Page Content with non-blocking GPU-composited entrance & safe bottom padding */}
           <motion.main
+            id="main-workspace"
             key={pathname}
             initial={isEcoMotion ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={isEcoMotion ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' }}
-            className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-4 pb-24 md:pb-6 [@media(max-height:500px)_and_(orientation:landscape)]:pb-4"
+            className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-3 sm:py-4 pb-24 md:pb-8 [@media(max-height:500px)_and_(orientation:landscape)]:pb-4"
           >
             {children}
           </motion.main>

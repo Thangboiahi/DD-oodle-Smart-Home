@@ -21,22 +21,17 @@ import {
   Badge,
   Banner,
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   SegmentedControl,
   TactileSwitch,
   useToast,
 } from '@/components/ui';
 import {
+  CollapsibleSection,
   UiDensity,
   useWorkspace,
 } from '@/components/workspace';
 import { CustomTriColorStudio } from '@/components/theme/CustomTriColorStudio';
 import { MotionPreference } from '@/components/theme/triColor';
-
-type SettingsTab = 'appearance' | 'home' | 'family' | 'alerts' | 'voice';
 
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
@@ -50,8 +45,6 @@ export default function SettingsPage() {
     resetWorkspacePreferences,
   } = useWorkspace();
   const { pushToast } = useToast();
-
-  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
 
   // Home & Tariff local fields
   const [homeName, setHomeName] = useState(activeHome.name);
@@ -98,7 +91,10 @@ export default function SettingsPage() {
     }
     const res = await Notification.requestPermission();
     setPushPerm(res);
-    pushToast({ title: `FCM Web Push: ${res.toUpperCase()}`, tone: res === 'granted' ? 'success' : 'warning' });
+    pushToast({
+      title: `FCM Web Push: ${res.toUpperCase()}`,
+      tone: res === 'granted' ? 'success' : 'warning',
+    });
   };
 
   const inviteFamilyMember = () => {
@@ -148,14 +144,15 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="max-w-3xl mx-auto space-y-3">
+      {/* Compact Header Row */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--dd-radius-card)] bg-surface/75 hairline-border px-3.5 py-2.5">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
-            Settings &amp; Workspace Governance
+          <h1 className="text-sm sm:text-base font-semibold tracking-tight text-foreground">
+            Settings &amp; Theme Studio
           </h1>
-          <p className="text-xs text-foreground-secondary">
-            Theme engine, tariff &amp; hub config, family RBAC permissions, notifications, and Voice C2C.
+          <p className="text-[11px] text-foreground-secondary">
+            Tri-color palette, motion &amp; haptics, home tariff, family RBAC, G14 SOS contacts, and Voice C2C.
           </p>
         </div>
         <Button
@@ -167,340 +164,330 @@ export default function SettingsPage() {
           }}
         >
           <RotateCcw className="h-3.5 w-3.5" />
-          <span>Reset Layouts</span>
+          <span>Reset Layout</span>
         </Button>
       </div>
 
-      {/* Section Switcher */}
-      <SegmentedControl<SettingsTab>
-        ariaLabel="Settings Sections"
-        value={activeTab}
-        onChange={setActiveTab}
-        className="w-full overflow-x-auto"
-        options={[
-          { value: 'appearance', label: 'Appearance', icon: <Palette className="h-3.5 w-3.5" /> },
-          { value: 'home', label: 'Home & Tariff', icon: <Home className="h-3.5 w-3.5" /> },
-          { value: 'family', label: 'Family Roles', icon: <Users className="h-3.5 w-3.5" /> },
-          { value: 'alerts', label: 'Alerts & SOS', icon: <Bell className="h-3.5 w-3.5" /> },
-          { value: 'voice', label: 'Voice C2C', icon: <Mic className="h-3.5 w-3.5" /> },
-        ]}
-      />
+      {/* 1. APPEARANCE & TRI-COLOR THEME STUDIO (Expanded by Default) */}
+      <CollapsibleSection
+        sectionId="settings_appearance"
+        title="1. Appearance & Tri-Color Theme Studio"
+        subtitle="Preset or custom 3-stop WCAG AA theme persisted across sessions"
+        icon={<Palette className="h-3.5 w-3.5" />}
+        badge={<Badge variant="mono">PERSISTED</Badge>}
+        defaultOpen={true}
+      >
+        <CustomTriColorStudio />
+      </CollapsibleSection>
 
-      {/* 1. APPEARANCE & WORKSPACE */}
-      {activeTab === 'appearance' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Palette className="h-4 w-4 text-accent" />
-              <span>Appearance &amp; Workspace Layout</span>
-            </CardTitle>
-            <Badge variant="mono">PERSISTED</Badge>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <CustomTriColorStudio />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border">
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-foreground-secondary">UI Density</div>
-                <SegmentedControl<UiDensity>
-                  fullWidth
-                  ariaLabel="UI Density"
-                  value={prefs.density}
-                  onChange={setDensity}
-                  options={[
-                    { value: 'comfortable', label: 'Comfortable', icon: <Sliders className="h-3.5 w-3.5" /> },
-                    { value: 'compact', label: 'Compact', icon: <Sliders className="h-3.5 w-3.5" /> },
-                  ]}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-foreground-secondary">
-                  Fluid Motion Performance
-                </div>
-                <SegmentedControl<MotionPreference>
-                  fullWidth
-                  ariaLabel="Motion preference"
-                  value={prefs.motionMode}
-                  onChange={setMotionMode}
-                  options={[
-                    { value: 'fluid', label: 'Fluid', icon: <Zap className="h-3.5 w-3.5" /> },
-                    { value: 'reduced', label: 'Reduced' },
-                    { value: 'eco', label: 'Eco / Off' },
-                  ]}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2 border-t border-border">
-              <TactileSwitch
-                label="Haptic Feedback (Android)"
-                sublabel="Subtle vibration feedback on switch toggles, fan steps, drag-drop & fault locks"
-                checked={prefs.hapticsEnabled}
-                onChange={(v) => updateWorkspacePrefs({ hapticsEnabled: v })}
-              />
-              <TactileSwitch
-                label="Prefer Eco 2D Grid over 3D Twin"
-                sublabel="Saves GPU & battery on low-end Android phones"
-                checked={prefs.eco2DDefault}
-                onChange={(v) => updateWorkspacePrefs({ eco2DDefault: v })}
-              />
-              <TactileSwitch
-                label="Always Show Custom Thin Scrollbars"
-                sublabel="Keep 5px industrial scrollbars visible inside drawers & logs"
-                checked={prefs.scrollbarAlwaysVisible}
-                onChange={(v) => updateWorkspacePrefs({ scrollbarAlwaysVisible: v })}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 2. HOME & TARIFF */}
-      {activeTab === 'home' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Home className="h-4 w-4 text-accent" />
-              <span>Home Profile, Electricity Tariff &amp; Local Hub</span>
-            </CardTitle>
-            <Badge variant="mono">{activeHome.id}</Badge>
-          </CardHeader>
-          <CardContent className="space-y-4 text-xs">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="space-y-1">
-                <span className="text-foreground-secondary font-medium">Home Name</span>
-                <input
-                  type="text"
-                  value={homeName}
-                  onChange={(e) => setHomeName(e.target.value)}
-                  className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 text-foreground"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-foreground-secondary font-medium">
-                  Electricity Tariff (`tariff_inr`, ₹/kWh)
-                </span>
-                <input
-                  type="number"
-                  step="0.25"
-                  min="1"
-                  max="30"
-                  value={prefs.tariffInr}
-                  onChange={(e) => updateWorkspacePrefs({ tariffInr: Number(e.target.value) || 7.5 })}
-                  className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 font-mono text-foreground tabular-nums"
-                />
-              </label>
-            </div>
-
-            <label className="block space-y-1">
-              <span className="text-foreground-secondary font-medium">Address</span>
-              <input
-                type="text"
-                value={homeAddress}
-                onChange={(e) => setHomeAddress(e.target.value)}
-                className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 text-foreground"
-              />
-            </label>
-
-            <div className="pt-2 border-t border-border space-y-3">
-              <TactileSwitch
-                label="Local Offline Hub Enabled (`hub_enabled`)"
-                sublabel="Route commands via HUB-01 local broker when internet drops"
-                checked={prefs.hubEnabled}
-                onChange={(v) => updateWorkspacePrefs({ hubEnabled: v })}
-              />
-              <label className="block space-y-1">
-                <span className="text-foreground-secondary font-medium">Hub Local IP (`hub_ip`)</span>
-                <input
-                  type="text"
-                  value={prefs.hubIp}
-                  onChange={(e) => updateWorkspacePrefs({ hubIp: e.target.value })}
-                  className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 font-mono text-foreground tabular-nums"
-                />
-              </label>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 3. FAMILY MEMBERS & PERMISSIONS */}
-      {activeTab === 'family' && (
+      {/* 2. MOTION, DENSITY & HAPTICS */}
+      <CollapsibleSection
+        sectionId="settings_motion_haptics"
+        title="2. Motion, Density & Haptics"
+        subtitle={`Density: ${prefs.density} · Motion: ${prefs.motionMode}`}
+        icon={<Sliders className="h-3.5 w-3.5" />}
+        defaultOpen={false}
+      >
         <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-accent" />
-                  <span>Active Session Role (RBAC Preview)</span>
-                </CardTitle>
-                <p className="text-xs text-foreground-muted mt-0.5">
-                  Test `database.rules.json` Owner-only gating on `set.immobilize` and billing.
-                </p>
-              </div>
-              <SegmentedControl<'OWNER' | 'MEMBER'>
-                size="sm"
-                value={prefs.userRole}
-                onChange={(role) => updateWorkspacePrefs({ userRole: role })}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-foreground-secondary">UI Density</div>
+              <SegmentedControl<UiDensity>
+                fullWidth
+                ariaLabel="UI Density"
+                value={prefs.density}
+                onChange={setDensity}
                 options={[
-                  { value: 'OWNER', label: 'OWNER' },
-                  { value: 'MEMBER', label: 'MEMBER' },
+                  { value: 'comfortable', label: 'Comfortable' },
+                  { value: 'compact', label: 'Compact' },
                 ]}
               />
-            </CardHeader>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-accent" />
-                <span>Family Members &amp; Sensitive Action Scoping</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-xs">
-              {members.map((m) => (
-                <div
-                  key={m.id}
-                  className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold text-foreground">{m.name}</div>
-                      <div className="text-[11px] font-mono text-foreground-muted">{m.phone}</div>
-                    </div>
-                    <Badge variant="neutral">{m.role}</Badge>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <TactileSwitch
-                      label="Door Locks"
-                      checked={m.allowDoorLocks}
-                      onChange={(v) =>
-                        setMembers((prev) =>
-                          prev.map((x) => (x.id === m.id ? { ...x, allowDoorLocks: v } : x))
-                        )
-                      }
-                    />
-                    <TactileSwitch
-                      label="Vehicle Immobilizer"
-                      sublabel="Owner-locked by RTDB"
-                      checked={false}
-                      locked={true}
-                      onChange={() => {}}
-                    />
-                    <TactileSwitch
-                      label="Billing & Plans"
-                      checked={m.allowBilling}
-                      onChange={(v) =>
-                        setMembers((prev) =>
-                          prev.map((x) => (x.id === m.id ? { ...x, allowBilling: v } : x))
-                        )
-                      }
-                    />
-                  </div>
-                </div>
-              ))}
-
-              <div className="pt-2 border-t border-border grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  value={inviteName}
-                  onChange={(e) => setInviteName(e.target.value)}
-                  placeholder="Member Name"
-                  className="h-10 rounded border border-border bg-surface-elevated px-3 text-foreground"
-                />
-                <input
-                  type="tel"
-                  value={invitePhone}
-                  onChange={(e) => setInvitePhone(e.target.value)}
-                  placeholder="+919862000000"
-                  className="h-10 rounded border border-border bg-surface-elevated px-3 font-mono text-foreground"
-                />
-                <Button variant="primary" touchTarget onClick={inviteFamilyMember}>
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Invite Member</span>
-                </Button>
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-foreground-secondary">
+                Fluid Motion Performance
               </div>
-            </CardContent>
-          </Card>
+              <SegmentedControl<MotionPreference>
+                fullWidth
+                ariaLabel="Motion preference"
+                value={prefs.motionMode}
+                onChange={setMotionMode}
+                options={[
+                  { value: 'fluid', label: 'Fluid', icon: <Zap className="h-3.5 w-3.5" /> },
+                  { value: 'reduced', label: 'Reduced' },
+                  { value: 'eco', label: 'Eco / Off' },
+                ]}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-border/50">
+            <TactileSwitch
+              label="Haptic Feedback (Android)"
+              sublabel="Subtle vibration feedback on switch toggles, fan steps & fault locks"
+              checked={prefs.hapticsEnabled}
+              onChange={(v) => updateWorkspacePrefs({ hapticsEnabled: v })}
+            />
+            <TactileSwitch
+              label="Prefer Eco 2D Grid over 3D Twin"
+              sublabel="Saves GPU & battery on low-end Android phones"
+              checked={prefs.eco2DDefault}
+              onChange={(v) => updateWorkspacePrefs({ eco2DDefault: v })}
+            />
+            <TactileSwitch
+              label="Always Show Custom Thin Scrollbars"
+              sublabel="Keep 5px industrial scrollbars visible inside drawers & logs"
+              checked={prefs.scrollbarAlwaysVisible}
+              onChange={(v) => updateWorkspacePrefs({ scrollbarAlwaysVisible: v })}
+            />
+          </div>
         </div>
-      )}
+      </CollapsibleSection>
 
-      {/* 4. EMERGENCY CONTACTS & NOTIFICATIONS */}
-      {activeTab === 'alerts' && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-4 w-4 text-accent" />
-              <span>Emergency Contacts, FCM Push &amp; WhatsApp</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-xs">
-            <div className="flex items-center justify-between rounded-lg border border-border bg-surface-elevated p-3">
-              <div>
-                <div className="font-semibold text-foreground">FCM Web Push Notifications</div>
-                <div className="text-[11px] font-mono text-foreground-muted">
-                  Status: {pushPerm.toUpperCase()} · Core Free Forever
-                </div>
+      {/* 3. HOME PROFILE, ELECTRICITY TARIFF & LOCAL HUB */}
+      <CollapsibleSection
+        sectionId="settings_home_tariff"
+        title="3. Home Profile, Tariff (₹/kWh) & Local Hub"
+        subtitle={`${homeName} · ₹${prefs.tariffInr}/kWh · Hub ${prefs.hubEnabled ? prefs.hubIp : 'Disabled'}`}
+        icon={<Home className="h-3.5 w-3.5" />}
+        badge={<Badge variant="mono">{activeHome.id}</Badge>}
+        defaultOpen={false}
+      >
+        <div className="space-y-3.5 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <span className="text-foreground-secondary font-medium">Home Name</span>
+              <input
+                type="text"
+                value={homeName}
+                onChange={(e) => setHomeName(e.target.value)}
+                className="w-full h-10 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated px-3 text-foreground"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-foreground-secondary font-medium">
+                Electricity Tariff (`tariff_inr`, ₹/kWh)
+              </span>
+              <input
+                type="number"
+                step="0.25"
+                min="1"
+                max="30"
+                value={prefs.tariffInr}
+                onChange={(e) => updateWorkspacePrefs({ tariffInr: Number(e.target.value) || 7.5 })}
+                className="w-full h-10 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated px-3 font-mono text-foreground tabular-nums"
+              />
+            </label>
+          </div>
+
+          <label className="block space-y-1">
+            <span className="text-foreground-secondary font-medium">Address</span>
+            <input
+              type="text"
+              value={homeAddress}
+              onChange={(e) => setHomeAddress(e.target.value)}
+              className="w-full h-10 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated px-3 text-foreground"
+            />
+          </label>
+
+          <div className="pt-2 border-t border-border/50 space-y-2.5">
+            <TactileSwitch
+              label="Local Offline Hub Enabled (`hub_enabled`)"
+              sublabel="Route commands via HUB-01 local broker when internet drops"
+              checked={prefs.hubEnabled}
+              onChange={(v) => updateWorkspacePrefs({ hubEnabled: v })}
+            />
+            <label className="block space-y-1">
+              <span className="text-foreground-secondary font-medium">Hub Local IP (`hub_ip`)</span>
+              <input
+                type="text"
+                value={prefs.hubIp}
+                onChange={(e) => updateWorkspacePrefs({ hubIp: e.target.value })}
+                className="w-full h-10 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated px-3 font-mono text-foreground tabular-nums"
+              />
+            </label>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* 4. FAMILY MEMBERS & ROLE PERMISSIONS */}
+      <CollapsibleSection
+        sectionId="settings_family_rbac"
+        title="4. Family Roles & Sensitive Action Scoping"
+        subtitle={`Active Session Role: ${prefs.userRole} · ${members.length} Family Member(s)`}
+        icon={<Users className="h-3.5 w-3.5" />}
+        badge={<Badge variant="accent">{prefs.userRole}</Badge>}
+        defaultOpen={false}
+      >
+        <div className="space-y-3.5 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-elevated/70 hairline-border p-3">
+            <div>
+              <div className="font-semibold text-foreground flex items-center gap-1.5">
+                <Shield className="h-3.5 w-3.5 text-accent" />
+                <span>Active Session Role (RBAC Preview)</span>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => void requestPushPermission()}>
-                {pushPerm === 'granted' ? 'Enabled' : 'Enable Push'}
+              <div className="text-[11px] text-foreground-muted mt-0.5">
+                Test `database.rules.json` Owner-only gating on `set.immobilize` and billing.
+              </div>
+            </div>
+            <SegmentedControl<'OWNER' | 'MEMBER'>
+              size="sm"
+              value={prefs.userRole}
+              onChange={(role) => updateWorkspacePrefs({ userRole: role })}
+              options={[
+                { value: 'OWNER', label: 'OWNER' },
+                { value: 'MEMBER', label: 'MEMBER' },
+              ]}
+            />
+          </div>
+
+          {members.map((m) => (
+            <div
+              key={m.id}
+              className="rounded-lg bg-surface-elevated/60 hairline-border p-3 space-y-2.5"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-foreground">{m.name}</div>
+                  <div className="text-[11px] font-mono text-foreground-muted">{m.phone}</div>
+                </div>
+                <Badge variant="neutral">{m.role}</Badge>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <TactileSwitch
+                  label="Door Locks"
+                  checked={m.allowDoorLocks}
+                  onChange={(v) =>
+                    setMembers((prev) =>
+                      prev.map((x) => (x.id === m.id ? { ...x, allowDoorLocks: v } : x))
+                    )
+                  }
+                />
+                <TactileSwitch
+                  label="Vehicle Immobilizer"
+                  sublabel="Owner-locked by RTDB"
+                  checked={false}
+                  locked={true}
+                  onChange={() => {}}
+                />
+                <TactileSwitch
+                  label="Billing & Plans"
+                  checked={m.allowBilling}
+                  onChange={(v) =>
+                    setMembers((prev) =>
+                      prev.map((x) => (x.id === m.id ? { ...x, allowBilling: v } : x))
+                    )
+                  }
+                />
+              </div>
+            </div>
+          ))}
+
+          <div className="pt-2 border-t border-border/50 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input
+              type="text"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              placeholder="Member Name"
+              className="h-10 rounded hairline-border bg-surface-elevated px-3 text-foreground"
+            />
+            <input
+              type="tel"
+              value={invitePhone}
+              onChange={(e) => setInvitePhone(e.target.value)}
+              placeholder="+919862000000"
+              className="h-10 rounded hairline-border bg-surface-elevated px-3 font-mono text-foreground"
+            />
+            <Button variant="primary" touchTarget onClick={inviteFamilyMember}>
+              <Plus className="h-3.5 w-3.5" />
+              <span>Invite Member</span>
+            </Button>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* 5. EMERGENCY CONTACTS (G14) & NOTIFICATIONS */}
+      <CollapsibleSection
+        sectionId="settings_alerts_sos"
+        title="5. Emergency Contacts (G14), FCM Push & WhatsApp"
+        subtitle={`${emergencyContacts.length}/3 E.164 Contacts · Push: ${pushPerm.toUpperCase()}`}
+        icon={<Bell className="h-3.5 w-3.5" />}
+        defaultOpen={false}
+      >
+        <div className="space-y-3.5 text-xs">
+          <div className="flex items-center justify-between rounded-lg bg-surface-elevated/70 hairline-border p-3">
+            <div>
+              <div className="font-semibold text-foreground">FCM Web Push Notifications</div>
+              <div className="text-[11px] font-mono text-foreground-muted">
+                Status: {pushPerm.toUpperCase()} · Core Free Forever
+              </div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => void requestPushPermission()}>
+              {pushPerm === 'granted' ? 'Enabled' : 'Enable Push'}
+            </Button>
+          </div>
+
+          <TactileSwitch
+            label="WhatsApp Alert Escalation (Plus Tier)"
+            sublabel="Receive critical fault, Crash SOS & renewal alerts on WhatsApp"
+            checked={whatsappAlerts}
+            onChange={setWhatsappAlerts}
+          />
+
+          <div className="space-y-2 pt-2 border-t border-border/50">
+            <div className="font-medium text-foreground-secondary">
+              Home Emergency Contacts (0–3 E.164 `^\+[1-9]\d&#123;7,14&#125;$`)
+            </div>
+            {emergencyContacts.map((c) => (
+              <div
+                key={c}
+                className="flex items-center justify-between rounded hairline-border bg-surface-elevated px-3 py-2 font-mono"
+              >
+                <span className="tabular-nums">{c}</span>
+                <button
+                  type="button"
+                  onClick={() => setEmergencyContacts((prev) => prev.filter((x) => x !== c))}
+                  className="text-foreground-muted hover:text-danger cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            <div className="flex gap-2">
+              <input
+                type="tel"
+                value={newContact}
+                onChange={(e) => setNewContact(e.target.value)}
+                placeholder="+919862000000"
+                className="flex-1 h-9 rounded hairline-border bg-surface-elevated px-3 font-mono text-foreground"
+              />
+              <Button variant="primary" size="sm" onClick={addEmergencyContact}>
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add</span>
               </Button>
             </div>
+          </div>
+        </div>
+      </CollapsibleSection>
 
-            <TactileSwitch
-              label="WhatsApp Alert Escalation (Plus Tier)"
-              sublabel="Receive critical fault, Crash SOS & renewal alerts on WhatsApp"
-              checked={whatsappAlerts}
-              onChange={setWhatsappAlerts}
-            />
-
-            <div className="space-y-2 pt-2 border-t border-border">
-              <div className="font-medium text-foreground-secondary">
-                Home Emergency Contacts (0–3 E.164)
-              </div>
-              {emergencyContacts.map((c) => (
-                <div
-                  key={c}
-                  className="flex items-center justify-between rounded border border-border bg-surface-elevated px-3 py-2 font-mono"
-                >
-                  <span className="tabular-nums">{c}</span>
-                  <button
-                    type="button"
-                    onClick={() => setEmergencyContacts((prev) => prev.filter((x) => x !== c))}
-                    className="text-foreground-muted hover:text-danger cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-              <div className="flex gap-2">
-                <input
-                  type="tel"
-                  value={newContact}
-                  onChange={(e) => setNewContact(e.target.value)}
-                  placeholder="+919862000000"
-                  className="flex-1 h-9 rounded border border-border bg-surface-elevated px-3 font-mono text-foreground"
-                />
-                <Button variant="primary" size="sm" onClick={addEmergencyContact}>
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Add</span>
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 5. VOICE ECOSYSTEMS (Phase 1.5 Plus Tier — No Matter/HomeKit in PWA) */}
-      {activeTab === 'voice' && (
-        <div className="space-y-4">
+      {/* 6. VOICE ECOSYSTEMS (Phase 1.5 Plus Tier — No Matter/HomeKit in PWA) */}
+      <CollapsibleSection
+        sectionId="settings_voice_c2c"
+        title="6. Voice Ecosystems (Phase 1.5 Plus C2C)"
+        subtitle="Google Home, Amazon Alexa & Siri Shortcuts webhooks"
+        icon={<Mic className="h-3.5 w-3.5" />}
+        badge={<Badge variant="success">C2C READY</Badge>}
+        defaultOpen={false}
+      >
+        <div className="space-y-3">
           <Banner
             tone="info"
             title="Cloud-to-Cloud Voice (Phase 1.5 Plus Tier)"
             description="Google Smart Home, Amazon Alexa, and Siri Shortcuts run via authenticated C2C webhooks. Matter / Apple HomeKit local commissioning is intentionally excluded from the PWA and reserved for HUB-01 Phase 2/3."
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 dd-grid-gap">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             {[
               {
                 key: 'google',
@@ -524,14 +511,17 @@ export default function SettingsPage() {
                 desc: '1-tap iOS Shortcuts scene & device webhook with rotatable bearer token.',
               },
             ].map((v) => (
-              <Card key={v.key} className="flex flex-col justify-between space-y-3">
-                <div className="space-y-2">
+              <div
+                key={v.key}
+                className="flex flex-col justify-between space-y-2.5 rounded-lg bg-surface-elevated/60 hairline-border p-3"
+              >
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="text-xs">{v.name}</CardTitle>
+                    <div className="text-xs font-semibold text-foreground">{v.name}</div>
                     <Badge variant="success">{v.status}</Badge>
                   </div>
                   <p className="text-[11px] text-foreground-secondary">{v.desc}</p>
-                  <div className="rounded border border-border bg-surface-elevated p-2 font-mono text-[10px] text-accent break-all">
+                  <div className="rounded hairline-border bg-canvas/70 p-2 font-mono text-[10px] text-accent break-all">
                     {v.endpoint}
                   </div>
                 </div>
@@ -565,11 +555,11 @@ export default function SettingsPage() {
                     </Button>
                   )}
                 </div>
-              </Card>
+              </div>
             ))}
           </div>
         </div>
-      )}
+      </CollapsibleSection>
     </div>
   );
 }

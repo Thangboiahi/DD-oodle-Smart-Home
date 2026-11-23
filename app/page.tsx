@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import {
   Activity,
   Box,
+  ChevronDown,
+  CreditCard,
   Eye,
   EyeOff,
   LayoutGrid,
@@ -16,17 +18,14 @@ import {
 import { simulatorEngine } from '@/lib/simulator/engine';
 import { Phase1ModuleCode } from '@/lib/protocol/contract';
 import { resolveEntitlements } from '@/lib/entitlements/resolver';
-import { PlanBadge } from '@/components/entitlements/PlanBadge';
-import { PWAInstallButton } from '@/components/pwa/PWAInstallButton';
 import { DynamicCapabilityCard } from '@/components/capabilities/DynamicCapabilityCard';
 import { SimulatorWorkbench } from '@/components/simulator/SimulatorWorkbench';
 import { Home3DTwinView } from '@/components/twin/Home3DTwinView';
 import { VoiceIntegrationsModal } from '@/components/voice/VoiceIntegrationsModal';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import {
+  Badge,
   Button,
-  Dropdown,
-  SegmentedControl,
   useToast,
 } from '@/components/ui';
 import { PullToRefresh } from '@/components/ui/PullToRefresh';
@@ -36,6 +35,7 @@ import {
   UniversalLayoutStudio,
   useWorkspace,
 } from '@/components/workspace';
+import { cn } from '@/lib/utils';
 
 export default function DDoodleSmartHomeDashboard() {
   const {
@@ -54,8 +54,10 @@ export default function DDoodleSmartHomeDashboard() {
   const [selectedModule, setSelectedModule] = useState<Phase1ModuleCode>('PWR-01');
   const [inspectedDeviceId, setInspectedDeviceId] = useState<string>('dd_pwr01_a1b2c3');
   const [inspectorPinRevealed, setInspectorPinRevealed] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
 
-  const workbenchState = getDockPanelState('sim_workbench', { open: false, position: 'right' });
+  const workbenchState = getDockPanelState('home_sim_workbench', { open: false, position: 'right' });
   const inspectorState = getDockPanelState('quick_inspector', { open: false, position: 'right' });
 
   const [initialTrialEndsAt] = useState(() => 1771488000000 + 89 * 24 * 60 * 60 * 1000);
@@ -66,6 +68,32 @@ export default function DDoodleSmartHomeDashboard() {
     expires_at: null,
     dfy_3d_purchased: false,
   });
+
+  // Listen for global Quick Tools header toggles (2D/3D switch & Voice C2C modal)
+  useEffect(() => {
+    const onToggleViewMode = () => {
+      setViewMode((prev) => (prev === '2d' ? '3d' : '2d'));
+    };
+    const onOpenVoice = () => {
+      setShowVoiceModal(true);
+    };
+    window.addEventListener('ddoodle:toggle-home-view-mode', onToggleViewMode);
+    window.addEventListener('ddoodle:open-voice-modal', onOpenVoice);
+    return () => {
+      window.removeEventListener('ddoodle:toggle-home-view-mode', onToggleViewMode);
+      window.removeEventListener('ddoodle:open-voice-modal', onOpenVoice);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setActionsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
 
   const devicesList = Object.values(snapshot.devices);
   const hubMembers = devicesList
@@ -79,12 +107,14 @@ export default function DDoodleSmartHomeDashboard() {
 
   const roomContainers = prefs.layout2D.containers;
   const filterTabs = [
-    { id: 'all', label: 'All Containers', count: devicesList.length },
-    ...roomContainers.map((c) => ({
-      id: c.id,
-      label: c.title,
-      count: c.itemIds.filter((id) => !prefs.layout2D.hiddenItems.includes(id)).length,
-    })),
+    { id: 'all', label: 'All Rooms', count: devicesList.length },
+    ...roomContainers
+      .filter((c) => c.id !== 'zone_monitors')
+      .map((c) => ({
+        id: c.id,
+        label: c.title,
+        count: c.itemIds.filter((id) => !prefs.layout2D.hiddenItems.includes(id)).length,
+      })),
   ];
 
   const inspectedDevice = snapshot.devices[inspectedDeviceId] ?? devicesList[0];
@@ -108,68 +138,178 @@ export default function DDoodleSmartHomeDashboard() {
 
   return (
     <PullToRefresh onRefresh={handlePullRefresh} hapticsEnabled={prefs.hapticsEnabled}>
-      <div className="space-y-4">
-        {/* Top Context Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <SegmentedControl<'2d' | '3d'>
-              ariaLabel="2D Grid or 3D Twin"
-              value={viewMode}
-              onChange={setViewMode}
-              options={[
-                { value: '2d', label: '2D Studio', icon: <LayoutGrid className="h-3.5 w-3.5" /> },
-                { value: '3d', label: '3D Twin', icon: <Box className="h-3.5 w-3.5" /> },
-              ]}
-            />
-            <PlanBadge entitlements={entitlements} />
+      <div className="space-y-3">
+        {/* PHASE 8: Single Sleek Compact Dashboard Sub-Bar ([2D|3D] + Room Snap-Strip + [Actions ▾]) */}
+        <div className="flex items-center justify-between gap-2 rounded-2xl border hairline-border bg-surface/75 px-2.5 py-1.5">
+          {/* Compact 2D / 3D Segmented Toggle */}
+          <div className="inline-flex shrink-0 rounded-xl border border-border/70 bg-surface-elevated p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode('2d')}
+              className={cn(
+                'inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors cursor-pointer',
+                viewMode === '2d'
+                  ? 'bg-accent text-[var(--dd-accent-fg)] font-semibold'
+                  : 'text-foreground-secondary hover:text-foreground'
+              )}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>2D</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('3d')}
+              className={cn(
+                'inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors cursor-pointer',
+                viewMode === '3d'
+                  ? 'bg-accent text-[var(--dd-accent-fg)] font-semibold'
+                  : 'text-foreground-secondary hover:text-foreground'
+              )}
+            >
+              <Box className="h-3.5 w-3.5" />
+              <span>3D</span>
+            </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {viewMode === '2d' && (
-              <Button
-                variant={editLayoutMode ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setEditLayoutMode((m) => !m)}
-              >
-                <Sliders className="h-3.5 w-3.5" />
-                <span>{editLayoutMode ? 'Done Editing' : 'Customize Layout'}</span>
-              </Button>
+          {/* Horizontal Snap-Scrolling Room Filter Strip (zero visible scrollbar) */}
+          {viewMode === '2d' && (
+            <div className="snap-strip flex-1 items-center gap-1.5 px-1">
+              {filterTabs.map((r) => {
+                const active = selectedRoom === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setSelectedRoom(r.id)}
+                    className={cn(
+                      'snap-start relative shrink-0 px-2.5 h-7 rounded-full border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer tabular-nums',
+                      active
+                        ? 'text-accent border-accent-border'
+                        : 'bg-surface-elevated/60 border-transparent text-foreground-secondary hover:text-foreground'
+                    )}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="home-room-pill"
+                        transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                        className="absolute inset-0 rounded-full bg-accent-soft"
+                      />
+                    )}
+                    <span className="relative z-10">
+                      {r.label}{' '}
+                      <span className="font-mono text-[10px] opacity-70">{r.count}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Single Compact [Actions ▾] Dropdown */}
+          <div ref={actionsMenuRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setActionsOpen((o) => !o)}
+              aria-expanded={actionsOpen}
+              className={cn(
+                'inline-flex h-7 items-center gap-1 rounded-xl border px-2.5 text-xs font-medium transition-colors cursor-pointer',
+                editLayoutMode || actionsOpen
+                  ? 'border-accent bg-accent-soft text-accent font-semibold'
+                  : 'border-border/70 bg-surface-elevated text-foreground-secondary hover:text-foreground'
+              )}
+            >
+              <Sliders className="h-3 w-3" />
+              <span className="hidden sm:inline">
+                {editLayoutMode ? 'Editing' : 'Actions'}
+              </span>
+              <ChevronDown className="h-3 w-3" />
+            </button>
+
+            {actionsOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-border bg-surface shadow-2xl p-1.5 z-40 space-y-1 text-xs">
+                {viewMode === '2d' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditLayoutMode((m) => !m);
+                      setActionsOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Sliders className="h-3.5 w-3.5 text-accent" />
+                      <span>{editLayoutMode ? 'Finish Editing' : 'Customize Layout'}</span>
+                    </span>
+                    {editLayoutMode && <Badge variant="accent">ON</Badge>}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDockPanelState('quick_inspector', {
+                      open: !inspectorState.open,
+                      collapsed: false,
+                    });
+                    setActionsOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Eye className="h-3.5 w-3.5 text-accent" />
+                    <span>Quick Inspector Dock</span>
+                  </span>
+                  {inspectorState.open && <Badge variant="accent">OPEN</Badge>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDockPanelState('home_sim_workbench', {
+                      open: !workbenchState.open,
+                      collapsed: false,
+                    });
+                    setActionsOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <PanelRightOpen className="h-3.5 w-3.5 text-accent" />
+                    <span>Protocol Diagnostics Deck</span>
+                  </span>
+                  {workbenchState.open && <Badge variant="accent">OPEN</Badge>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowVoiceModal(true);
+                    setActionsOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Mic className="h-3.5 w-3.5 text-accent" />
+                    <span>Voice C2C Integrations</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-foreground-muted">Plus</span>
+                </button>
+
+                <div className="pt-1 border-t hairline-border">
+                  <Link
+                    href="/billing"
+                    onClick={() => setActionsOpen(false)}
+                    className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] text-foreground-secondary hover:bg-surface-elevated hover:text-foreground"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <CreditCard className="h-3.5 w-3.5 text-accent" />
+                      <span>Plan: Plus Trial ({entitlements.trialDaysRemaining ?? 78}d)</span>
+                    </span>
+                    <span className="font-mono text-[10px] text-accent">→</span>
+                  </Link>
+                </div>
+              </div>
             )}
-
-            <Button
-              variant={inspectorState.open ? 'accent' : 'secondary'}
-              size="sm"
-              onClick={() =>
-                setDockPanelState('quick_inspector', {
-                  open: !inspectorState.open,
-                  collapsed: false,
-                })
-              }
-            >
-              <Eye className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Inspector</span>
-            </Button>
-
-            <Button
-              variant={workbenchState.open ? 'accent' : 'secondary'}
-              size="sm"
-              onClick={() =>
-                setDockPanelState('sim_workbench', {
-                  open: !workbenchState.open,
-                  collapsed: false,
-                })
-              }
-            >
-              <PanelRightOpen className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Diagnostics</span>
-            </Button>
-
-            <Button variant="secondary" size="sm" onClick={() => setShowVoiceModal(true)}>
-              <Mic className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">Voice</span>
-            </Button>
-
-            <PWAInstallButton />
           </div>
         </div>
 
@@ -197,59 +337,11 @@ export default function DDoodleSmartHomeDashboard() {
             </ErrorBoundary>
           </FullscreenStage>
         ) : (
-          <div className="space-y-4">
-            {/* Container / Room Filter Pills (with shared-element layoutId) */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 dd-scroll flex-1">
-                {filterTabs.map((r) => {
-                  const active = selectedRoom === r.id;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setSelectedRoom(r.id)}
-                      className={`relative px-3 h-8 rounded-full border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer tabular-nums ${
-                        active
-                          ? 'text-accent border-accent-border'
-                          : 'bg-surface border-border text-foreground-secondary hover:text-foreground'
-                      }`}
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId="home-room-pill"
-                          transition={{ type: 'spring', stiffness: 480, damping: 36 }}
-                          className="absolute inset-0 rounded-full bg-accent-soft"
-                        />
-                      )}
-                      <span className="relative z-10">
-                        {r.label} <span className="font-mono text-[10px] opacity-75">{r.count}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="hidden lg:block w-52 shrink-0">
-                <Dropdown
-                  searchable
-                  ariaLabel="Filter container or room"
-                  value={selectedRoom}
-                  onChange={setSelectedRoom}
-                  options={filterTabs.map((r) => ({
-                    value: r.id,
-                    label: r.label,
-                    badge: String(r.count),
-                  }))}
-                />
-              </div>
-            </div>
-
-            <UniversalLayoutStudio
-              selectedRoomFilter={selectedRoom}
-              hasPlusHistory={entitlements.effectiveTier !== 'core'}
-              onInspectDevice={openInspectorFor}
-            />
-          </div>
+          <UniversalLayoutStudio
+            selectedRoomFilter={selectedRoom}
+            hasPlusHistory={entitlements.effectiveTier !== 'core'}
+            onInspectDevice={openInspectorFor}
+          />
         )}
 
         {/* Dockable Quick Inspector & Live Stream Panel */}
@@ -268,21 +360,21 @@ export default function DDoodleSmartHomeDashboard() {
           {inspectedDevice && (
             <div className="space-y-3.5 text-xs">
               <div className="grid grid-cols-2 gap-2 font-mono text-[11px] tabular-nums">
-                <div className="rounded-md border border-border bg-surface-elevated p-2">
+                <div className="rounded-xl border hairline-border bg-surface-elevated p-2">
                   <div className="text-[9px] text-foreground-muted">RSSI / SIGNAL</div>
                   <div className="font-semibold text-foreground">{inspectedDevice.state.rssi} dBm</div>
                 </div>
-                <div className="rounded-md border border-border bg-surface-elevated p-2">
+                <div className="rounded-xl border hairline-border bg-surface-elevated p-2">
                   <div className="text-[9px] text-foreground-muted">LAST ACK</div>
                   <div className="font-semibold text-success truncate">
                     {inspectedDevice.state.ack ?? 'SYNCED'}
                   </div>
                 </div>
-                <div className="rounded-md border border-border bg-surface-elevated p-2">
+                <div className="rounded-xl border hairline-border bg-surface-elevated p-2">
                   <div className="text-[9px] text-foreground-muted">OP MODE</div>
                   <div className="font-semibold text-foreground">{inspectedDevice.info.operation_mode}</div>
                 </div>
-                <div className="rounded-md border border-border bg-surface-elevated p-2">
+                <div className="rounded-xl border hairline-border bg-surface-elevated p-2">
                   <div className="text-[9px] text-foreground-muted">G7 LOCAL PIN</div>
                   <button
                     type="button"
@@ -324,14 +416,14 @@ export default function DDoodleSmartHomeDashboard() {
                 </div>
                 <div className="space-y-1 max-h-48 overflow-y-auto dd-scroll">
                   {inspectedPackets.length === 0 ? (
-                    <div className="rounded border border-border bg-surface-elevated p-2.5 text-[11px] font-mono text-foreground-muted">
+                    <div className="rounded-xl border hairline-border bg-surface-elevated p-2.5 text-[11px] font-mono text-foreground-muted">
                       Listening for live frames on {inspectedDevice.device_id}...
                     </div>
                   ) : (
                     inspectedPackets.map((pkt) => (
                       <div
                         key={pkt.id}
-                        className="rounded border border-border bg-surface-elevated p-2 font-mono text-[10px] space-y-0.5"
+                        className="rounded-xl border hairline-border bg-surface-elevated p-2 font-mono text-[10px] space-y-0.5"
                       >
                         <div className="flex items-center justify-between text-foreground-secondary">
                           <span className="text-accent font-semibold">{pkt.direction}</span>
@@ -349,7 +441,7 @@ export default function DDoodleSmartHomeDashboard() {
 
         {/* Dockable Simulator & Protocol Diagnostics Panel */}
         <DockablePanel
-          panelId="sim_workbench"
+          panelId="home_sim_workbench"
           title="Protocol & Fault Diagnostics"
           subtitle="v1.4 Simulator · G1–G18 Validator"
           icon={<Activity className="h-3.5 w-3.5" />}

@@ -6,10 +6,13 @@ import {
   AlertTriangle,
   Box,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Cpu,
   CreditCard,
   Eye,
   FileCheck,
+  Filter,
   HardDrive,
   Lock,
   Plus,
@@ -49,6 +52,7 @@ import {
   useToast,
 } from '@/components/ui';
 import {
+  CollapsibleSection,
   DockablePanel,
   FullscreenStage,
   useWorkspace,
@@ -167,6 +171,8 @@ export default function AdminInstallerPortal() {
   // Fleet Health & Diagnostics state
   const [fleetQuery, setFleetQuery] = useState('');
   const [fleetSort, setFleetSort] = useState<'name' | 'rssi' | 'fault'>('fault');
+  const [showFilterBar, setShowFilterBar] = useState(false);
+  const [expandedMobileCardId, setExpandedMobileCardId] = useState<string | null>(null);
   const [inspectedDeviceId, setInspectedDeviceId] = useState<string>('dd_pwr01_a1b2c3');
   const [simSelectedModule, setSimSelectedModule] = useState<Phase1ModuleCode>('PWR-01');
   const [auditReport, setAuditReport] = useState<ContractComplianceReport | null>(null);
@@ -342,8 +348,8 @@ export default function AdminInstallerPortal() {
   // Role gate view if previewing as non-admin Customer
   if (adminRole !== 'INSTALLER_ADMIN') {
     return (
-      <div className="max-w-lg mx-auto my-12 space-y-4">
-        <Card className="text-center space-y-3">
+      <div className="max-w-md mx-auto my-12 space-y-4">
+        <div className="rounded-[var(--dd-radius-card)] bg-surface/85 hairline-border p-5 text-center space-y-3">
           <Lock className="h-8 w-8 mx-auto text-danger" />
           <h1 className="text-base font-semibold">Installer / Admin Role Required</h1>
           <p className="text-xs text-foreground-secondary">
@@ -353,36 +359,33 @@ export default function AdminInstallerPortal() {
             <Shield className="h-3.5 w-3.5" />
             <span>Switch Preview to Installer Admin</span>
           </Button>
-        </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Top Operations Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-lg font-semibold tracking-tight text-foreground">
-              Installer &amp; Fleet Operations Portal
-            </h1>
-            <Badge variant="accent">ROLE: INSTALLER_ADMIN</Badge>
-          </div>
-          <p className="text-xs text-foreground-secondary font-mono tabular-nums">
-            {devicesList.length} Fleet Nodes · {activeIncidents.length} Active Incidents · Protocol v1.4
-          </p>
+    <div className="space-y-3">
+      {/* Compact Operations Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--dd-radius-card)] bg-surface/75 hairline-border px-3.5 py-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-sm sm:text-base font-semibold tracking-tight text-foreground">
+            Installer &amp; Fleet Portal
+          </h1>
+          <Badge variant="accent">INSTALLER_ADMIN</Badge>
+          <span className="text-[11px] text-foreground-muted font-mono tabular-nums">
+            {devicesList.length} Nodes · {activeIncidents.length} Alerts
+          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" touchTarget onClick={runLiveAudit}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button variant="secondary" size="sm" onClick={runLiveAudit}>
             <FileCheck className="h-3.5 w-3.5 text-success" />
-            <span>Run v1.4 Audit</span>
+            <span>v1.4 Audit</span>
           </Button>
           <Button
             variant={inspectorDock.open ? 'accent' : 'secondary'}
             size="sm"
-            touchTarget
             onClick={() =>
               setDockPanelState('admin_node_inspector', {
                 open: !inspectorDock.open,
@@ -391,11 +394,11 @@ export default function AdminInstallerPortal() {
             }
           >
             <Activity className="h-3.5 w-3.5" />
-            <span>Diagnostics Dock</span>
+            <span>Inspector</span>
           </Button>
-          <Button variant="outline" size="sm" touchTarget onClick={() => setAdminRole('CUSTOMER')}>
+          <Button variant="outline" size="sm" onClick={() => setAdminRole('CUSTOMER')}>
             <Lock className="h-3.5 w-3.5" />
-            <span>Test Role Gate</span>
+            <span className="hidden sm:inline">Role Gate</span>
           </Button>
         </div>
       </div>
@@ -409,66 +412,67 @@ export default function AdminInstallerPortal() {
         />
       )}
 
-      {/* 4 Core Module Tabs */}
-      <SegmentedControl<AdminTab>
-        ariaLabel="Admin Portal Modules"
-        value={activeTab}
-        onChange={setActiveTab}
-        className="w-full overflow-x-auto"
-        options={[
-          {
-            value: 'fleet',
-            label: 'Fleet Health',
-            icon: <Activity className="h-3.5 w-3.5" />,
-            badge: activeIncidents.length || undefined,
-          },
-          {
-            value: 'onboarding',
-            label: 'Onboarding & 3D Builder',
-            icon: <Box className="h-3.5 w-3.5" />,
-          },
-          {
-            value: 'ota',
-            label: 'Signed OTA (G5)',
-            icon: <HardDrive className="h-3.5 w-3.5" />,
-          },
-          {
-            value: 'billing_amc',
-            label: 'Plans, 4G SIM & AMC',
-            icon: <CreditCard className="h-3.5 w-3.5" />,
-          },
-        ]}
-      />
+      {/* Horizontal Snap-Scrolling Module Tabs */}
+      <div className="overflow-x-auto no-scrollbar snap-strip">
+        <SegmentedControl<AdminTab>
+          ariaLabel="Admin Portal Modules"
+          value={activeTab}
+          onChange={setActiveTab}
+          className="w-max min-w-full"
+          options={[
+            {
+              value: 'fleet',
+              label: 'Fleet Health',
+              icon: <Activity className="h-3.5 w-3.5" />,
+              badge: activeIncidents.length || undefined,
+            },
+            {
+              value: 'onboarding',
+              label: 'Onboarding & 3D Builder',
+              icon: <Box className="h-3.5 w-3.5" />,
+            },
+            {
+              value: 'ota',
+              label: 'Signed OTA (G5)',
+              icon: <HardDrive className="h-3.5 w-3.5" />,
+            },
+            {
+              value: 'billing_amc',
+              label: 'Plans, 4G SIM & AMC',
+              icon: <CreditCard className="h-3.5 w-3.5" />,
+            },
+          ]}
+        />
+      </div>
 
       {/* MODULE 1: FLEET HEALTH & DIAGNOSTICS */}
       {activeTab === 'fleet' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {/* Active Incidents Strip */}
           {activeIncidents.length > 0 && (
-            <Card className="border-danger/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-danger">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>Live Incident Tickets (`incidents/&#123;incident_id&#125;`)</span>
-                </CardTitle>
-                <Badge variant="danger">{activeIncidents.length} ACTIVE</Badge>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs font-mono">
+            <div className="rounded-[var(--dd-radius-card)] bg-surface/80 hairline-border p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-danger">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span>Active Fleet Incidents ({activeIncidents.length})</span>
+                </div>
+                <Badge variant="danger">PRIORITY</Badge>
+              </div>
+              <div className="flex gap-2 overflow-x-auto no-scrollbar snap-strip pb-0.5 text-xs font-mono">
                 {activeIncidents.map((inc) => (
                   <div
                     key={inc.incident_id}
-                    className="rounded-lg border border-danger/40 bg-danger-soft p-2.5 flex items-center justify-between gap-2"
+                    className="snap-start shrink-0 min-w-[230px] rounded-lg hairline-border bg-danger-soft/70 px-3 py-2 flex items-center justify-between gap-2"
                   >
                     <div className="min-w-0">
-                      <div className="font-bold text-danger">{inc.type}</div>
+                      <div className="font-bold text-danger text-[11px]">{inc.type}</div>
                       <div className="text-[10px] text-foreground-secondary truncate">
-                        {inc.deviceId} · {inc.incident_id}
+                        {inc.deviceId}
                       </div>
                     </div>
                     <Button
                       variant="secondary"
                       size="sm"
-                      touchTarget
                       onClick={() => {
                         setInspectedDeviceId(inc.deviceId);
                         setDockPanelState('admin_node_inspector', { open: true, collapsed: false });
@@ -478,80 +482,131 @@ export default function AdminInstallerPortal() {
                     </Button>
                   </div>
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
-          {/* Filter / Sort Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <Search className="h-3.5 w-3.5 text-foreground-muted absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                aria-label="Filter fleet devices"
-                value={fleetQuery}
-                onChange={(e) => setFleetQuery(e.target.value)}
-                placeholder="Filter by device_id, name, or module_code..."
-                className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated pl-8 pr-3 text-xs text-foreground focus:outline-none focus:border-accent"
-              />
+          {/* Collapsible Filter / Sort Bar */}
+          <div className="rounded-[var(--dd-radius-card)] bg-surface/70 hairline-border px-3 py-2 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-foreground-secondary">
+                Fleet Nodes ({filteredFleet.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowFilterBar((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-accent cursor-pointer"
+              >
+                <Filter className="h-3.5 w-3.5" />
+                <span>{showFilterBar ? 'Hide Filter & Sort' : 'Filter & Sort'}</span>
+              </button>
             </div>
 
-            <SegmentedControl<'fault' | 'rssi' | 'name'>
-              size="sm"
-              ariaLabel="Sort fleet"
-              value={fleetSort}
-              onChange={setFleetSort}
-              options={[
-                { value: 'fault', label: 'Faults First' },
-                { value: 'rssi', label: 'Weakest RSSI' },
-                { value: 'name', label: 'A–Z' },
-              ]}
-            />
+            {showFilterBar && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/50">
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search className="h-3.5 w-3.5 text-foreground-muted absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    aria-label="Filter fleet devices"
+                    value={fleetQuery}
+                    onChange={(e) => setFleetQuery(e.target.value)}
+                    placeholder="Filter by device_id, name, or module_code..."
+                    className="w-full h-9 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated pl-8 pr-3 text-xs text-foreground focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <SegmentedControl<'fault' | 'rssi' | 'name'>
+                  size="sm"
+                  ariaLabel="Sort fleet"
+                  value={fleetSort}
+                  onChange={setFleetSort}
+                  options={[
+                    { value: 'fault', label: 'Faults First' },
+                    { value: 'rssi', label: 'Weakest RSSI' },
+                    { value: 'name', label: 'A–Z' },
+                  ]}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Mobile Card Grid */}
-          <div className="grid grid-cols-1 md:hidden gap-2.5">
+          {/* Mobile Compact Expandable Fleet Cards */}
+          <div className="grid grid-cols-1 md:hidden gap-2">
             {filteredFleet.map((dev) => {
               const wat = dev.module_code === 'WAT-01' ? (dev.telemetry as WaterTelemetryPayload) : null;
+              const isExpanded = expandedMobileCardId === dev.device_id;
               return (
-                <Card key={dev.device_id} className="space-y-2 text-xs">
+                <div
+                  key={dev.device_id}
+                  className="rounded-[var(--dd-radius-card)] bg-surface/85 hairline-border px-3 py-2.5 text-xs space-y-2"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-foreground">{dev.name}</div>
-                    <Badge variant={dev.state.fault ? 'danger' : 'success'} dot>
-                      {dev.state.fault ?? dev.status.toUpperCase()}
-                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedMobileCardId(isExpanded ? null : dev.device_id)
+                      }
+                      className="flex items-center gap-2 text-left min-w-0 flex-1 cursor-pointer"
+                    >
+                      <Badge variant="accent">{dev.module_code}</Badge>
+                      <span className="font-semibold text-foreground truncate">{dev.name}</span>
+                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Badge variant={dev.state.fault ? 'danger' : 'success'} dot>
+                        {dev.state.fault ?? dev.status.toUpperCase()}
+                      </Badge>
+                      <button
+                        type="button"
+                        aria-label="Toggle node details"
+                        onClick={() =>
+                          setExpandedMobileCardId(isExpanded ? null : dev.device_id)
+                        }
+                        className="p-1 text-foreground-muted hover:text-foreground cursor-pointer"
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <div className="font-mono text-[11px] text-foreground-muted tabular-nums flex flex-wrap gap-2">
-                    <span>{dev.module_code}</span>
-                    <span>RSSI {dev.state.rssi} dBm</span>
-                    <span>FW {dev.info.fw_version}</span>
-                    <span>{dev.info.operation_mode}</span>
-                    {wat?.tank_link === false && <Badge variant="warning">TANK_LINK_LOST</Badge>}
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full"
-                    touchTarget
-                    onClick={() => {
-                      setInspectedDeviceId(dev.device_id);
-                      setDockPanelState('admin_node_inspector', { open: true, collapsed: false });
-                    }}
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    <span>Open Live Diagnostics</span>
-                  </Button>
-                </Card>
+
+                  {isExpanded && (
+                    <div className="pt-2 border-t border-border/50 space-y-2">
+                      <div className="font-mono text-[11px] text-foreground-muted tabular-nums flex flex-wrap gap-2">
+                        <span>ID: {dev.device_id}</span>
+                        <span>RSSI {dev.state.rssi} dBm</span>
+                        <span>FW v{dev.info.fw_version}</span>
+                        <span>{dev.info.operation_mode}</span>
+                        {wat?.tank_link === false && <Badge variant="warning">TANK_LINK_LOST</Badge>}
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => {
+                          setInspectedDeviceId(dev.device_id);
+                          setDockPanelState('admin_node_inspector', { open: true, collapsed: false });
+                        }}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>Open Node Inspector</span>
+                      </Button>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
 
           {/* Desktop / Tablet Dense Fleet Table */}
-          <Card noPadding className="hidden md:block overflow-hidden">
+          <Card noPadding className="hidden md:block overflow-hidden hairline-border">
             <div className="overflow-x-auto dd-scroll">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border bg-surface-elevated text-[11px] font-mono text-foreground-muted">
+                  <tr className="border-b border-border/60 bg-surface-elevated/60 text-[11px] font-mono text-foreground-muted">
                     <th className="p-3">Device / ID</th>
                     <th className="p-3">Module</th>
                     <th className="p-3">Status &amp; Faults</th>
@@ -567,7 +622,7 @@ export default function AdminInstallerPortal() {
                     return (
                       <tr
                         key={dev.device_id}
-                        className="border-b border-border/60 last:border-b-0 hover:bg-surface-elevated/60"
+                        className="border-b border-border/40 last:border-b-0 hover:bg-surface-elevated/50"
                       >
                         <td className="p-3">
                           <div className="font-medium text-foreground">{dev.name}</div>
@@ -621,10 +676,10 @@ export default function AdminInstallerPortal() {
 
       {/* MODULE 2: CUSTOMER ONBOARDING & ₹999 DFY 3D HOME TWIN BUILDER */}
       {activeTab === 'onboarding' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 dd-grid-gap">
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {/* QR Batch Provisioning Queue */}
-            <Card className="space-y-3">
+            <Card className="space-y-3 hairline-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <QrCode className="h-4 w-4 text-accent" />
@@ -640,7 +695,7 @@ export default function AdminInstallerPortal() {
                     value={newClaimId}
                     onChange={(e) => setNewClaimId(e.target.value)}
                     placeholder="Scanned device_id"
-                    className="flex-1 min-w-[140px] h-10 rounded border border-border bg-surface-elevated px-2.5 font-mono text-foreground"
+                    className="flex-1 min-w-[140px] h-10 rounded hairline-border bg-surface-elevated px-2.5 font-mono text-foreground"
                   />
                   <Dropdown
                     ariaLabel="Module type"
@@ -658,7 +713,6 @@ export default function AdminInstallerPortal() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    touchTarget
                     onClick={() => {
                       if (!newClaimId.trim()) return;
                       setBatchQueue((prev) => [
@@ -683,7 +737,7 @@ export default function AdminInstallerPortal() {
                   {batchQueue.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between rounded border border-border bg-surface-elevated px-3 py-2 font-mono"
+                      className="flex items-center justify-between rounded hairline-border bg-surface-elevated px-3 py-2 font-mono"
                     >
                       <div>
                         <span className="font-semibold text-foreground">{item.deviceId}</span>
@@ -701,7 +755,6 @@ export default function AdminInstallerPortal() {
                 <Button
                   variant="primary"
                   className="w-full"
-                  touchTarget
                   onClick={() => {
                     setBatchQueue((prev) => prev.map((x) => ({ ...x, status: 'claimed' })));
                     pushToast({
@@ -718,7 +771,7 @@ export default function AdminInstallerPortal() {
             </Card>
 
             {/* Installer 3D Pin Coordinate Builder & ₹999 DFY Delivery */}
-            <Card className="space-y-3">
+            <Card className="space-y-3 hairline-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-accent" />
@@ -753,7 +806,7 @@ export default function AdminInstallerPortal() {
                   {Object.entries(pinCoords).map(([devId, pos]) => (
                     <div
                       key={devId}
-                      className="flex items-center justify-between gap-2 rounded border border-border bg-surface-elevated px-2.5 py-1.5 font-mono text-[11px]"
+                      className="flex items-center justify-between gap-2 rounded hairline-border bg-surface-elevated px-2.5 py-1.5 font-mono text-[11px]"
                     >
                       <span className="truncate text-foreground">{devId}</span>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -768,7 +821,7 @@ export default function AdminInstallerPortal() {
                               [devId]: { ...pos, x: Number(e.target.value) },
                             }))
                           }
-                          className="w-16 h-8 rounded border border-border bg-surface px-1.5 tabular-nums"
+                          className="w-16 h-8 rounded hairline-border bg-surface px-1.5 tabular-nums"
                         />
                         <input
                           type="number"
@@ -781,7 +834,7 @@ export default function AdminInstallerPortal() {
                               [devId]: { ...pos, z: Number(e.target.value) },
                             }))
                           }
-                          className="w-16 h-8 rounded border border-border bg-surface px-1.5 tabular-nums"
+                          className="w-16 h-8 rounded hairline-border bg-surface px-1.5 tabular-nums"
                         />
                       </div>
                     </div>
@@ -791,7 +844,6 @@ export default function AdminInstallerPortal() {
                 <Button
                   variant="primary"
                   className="w-full"
-                  touchTarget
                   onClick={() => {
                     setDfyDelivered(true);
                     pushToast({
@@ -826,8 +878,8 @@ export default function AdminInstallerPortal() {
 
       {/* MODULE 3: SIGNED OTA FIRMWARE MANAGER (G5) */}
       {activeTab === 'ota' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 dd-grid-gap">
-          <Card className="space-y-3">
+        <div className="space-y-3">
+          <Card className="space-y-3 hairline-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Upload className="h-4 w-4 text-accent" />
@@ -860,7 +912,7 @@ export default function AdminInstallerPortal() {
                     type="text"
                     value={otaVersion}
                     onChange={(e) => setOtaVersion(e.target.value)}
-                    className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 font-mono text-foreground"
+                    className="w-full h-10 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated px-3 font-mono text-foreground"
                   />
                 </label>
               </div>
@@ -880,7 +932,7 @@ export default function AdminInstallerPortal() {
                 </div>
               </label>
 
-              <div className="rounded border border-border bg-canvas p-2.5 font-mono text-[10px] break-all text-foreground-secondary">
+              <div className="rounded hairline-border bg-canvas/80 p-2.5 font-mono text-[10px] break-all text-foreground-secondary">
                 <span className="text-foreground-muted">SHA-256: </span>
                 <span className="text-accent">{otaSha256}</span>
               </div>
@@ -901,22 +953,23 @@ export default function AdminInstallerPortal() {
                 />
               </div>
 
-              <Button variant="primary" className="w-full" touchTarget onClick={handleDispatchOta}>
+              <Button variant="primary" className="w-full" onClick={handleDispatchOta}>
                 <Send className="h-3.5 w-3.5" />
                 <span>Publish Signed `.../ota` Rollout</span>
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="space-y-3">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-success" />
-                <span>v1.4 Backend OTA Preflight Readiness</span>
-              </CardTitle>
-              <Badge variant="success">C3 / HTTP 206</Badge>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs">
+          {/* Collapsible OTA Preflight Readiness & Dispatched Payload */}
+          <CollapsibleSection
+            sectionId="admin_ota_preflight"
+            title="v1.4 Backend OTA Preflight Readiness (C3 / HTTP 206)"
+            subtitle="64 KiB Range Chunking, C3 Common-CA & Secure Boot v2 checks"
+            icon={<ShieldCheck className="h-3.5 w-3.5 text-success" />}
+            badge={<Badge variant="success">VERIFIED</Badge>}
+            defaultOpen={false}
+          >
+            <div className="space-y-2.5 text-xs">
               {[
                 {
                   key: 'range206' as const,
@@ -936,7 +989,7 @@ export default function AdminInstallerPortal() {
               ].map((chk) => (
                 <label
                   key={chk.key}
-                  className="flex items-start gap-2.5 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 cursor-pointer"
+                  className="flex items-start gap-2.5 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated p-3 cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -954,26 +1007,26 @@ export default function AdminInstallerPortal() {
               ))}
 
               {otaDispatchedPayload && (
-                <div className="space-y-1">
+                <div className="space-y-1 pt-2">
                   <div className="text-[10px] font-mono text-success uppercase">
                     Dispatched G5 `.../ota` Payload:
                   </div>
-                  <pre className="rounded border border-border bg-canvas p-2.5 font-mono text-[10px] text-foreground-secondary overflow-x-auto dd-scroll">
+                  <pre className="rounded hairline-border bg-canvas p-2.5 font-mono text-[10px] text-foreground-secondary overflow-x-auto dd-scroll">
                     {JSON.stringify(otaDispatchedPayload, null, 2)}
                   </pre>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </CollapsibleSection>
         </div>
       )}
 
       {/* MODULE 4: SUBSCRIPTIONS, 4G M2M SIM & AMC MANAGER */}
       {activeTab === 'billing_amc' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {/* Customer Plans & 4G M2M SIM Table */}
-          <Card noPadding className="overflow-hidden">
-            <div className="p-3.5 border-b border-border flex items-center justify-between">
+          <Card noPadding className="overflow-hidden hairline-border">
+            <div className="p-3 border-b border-border/50 flex items-center justify-between">
               <div className="text-xs font-semibold text-foreground">
                 Customer Subscriptions &amp; VEH-01 4G M2M SIM Renewals
               </div>
@@ -982,7 +1035,7 @@ export default function AdminInstallerPortal() {
             <div className="overflow-x-auto dd-scroll">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border bg-surface-elevated text-[11px] font-mono text-foreground-muted">
+                  <tr className="border-b border-border/50 bg-surface-elevated/60 text-[11px] font-mono text-foreground-muted">
                     <th className="p-3">Customer / Home</th>
                     <th className="p-3">Plan Tier</th>
                     <th className="p-3">Trial / Cycle</th>
@@ -992,7 +1045,7 @@ export default function AdminInstallerPortal() {
                 </thead>
                 <tbody>
                   {CUSTOMER_PLANS.map((row) => (
-                    <tr key={row.homeId} className="border-b border-border/60 last:border-b-0">
+                    <tr key={row.homeId} className="border-b border-border/40 last:border-b-0">
                       <td className="p-3">
                         <div className="font-medium text-foreground">{row.customer}</div>
                         <div className="text-[10px] font-mono text-foreground-muted">{row.homeId}</div>
@@ -1029,25 +1082,25 @@ export default function AdminInstallerPortal() {
           </Card>
 
           {/* AMC Tickets & 24h Swap Priority SLA */}
-          <Card className="space-y-3">
+          <Card className="space-y-3 hairline-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wrench className="h-4 w-4 text-accent" />
                 <span>AMC Tickets (`amc_tickets/&#123;ticket_id&#125;`)</span>
               </CardTitle>
-              <Badge variant="warning">24h SWAP PRIORITY SLA — SHIELD / ALL-IN</Badge>
+              <Badge variant="warning">24h SWAP SLA — SHIELD / ALL-IN</Badge>
             </CardHeader>
-            <CardContent className="space-y-2.5 text-xs">
+            <CardContent className="space-y-2 text-xs">
               {amcTickets.map((t) => (
                 <div
                   key={t.ticket_id}
-                  className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 flex flex-wrap items-center justify-between gap-3"
+                  className="rounded-lg hairline-border bg-surface-elevated/70 p-3 flex flex-wrap items-center justify-between gap-2.5"
                 >
                   <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono font-semibold text-foreground">{t.ticket_id}</span>
                       <span className="font-medium text-foreground">{t.device}</span>
-                      {t.sla24h && <Badge variant="danger">24h SWAP PRIORITY SLA</Badge>}
+                      {t.sla24h && <Badge variant="danger">24h SWAP SLA</Badge>}
                       <Badge variant={t.status === 'RESOLVED' ? 'success' : 'warning'}>
                         {t.status}
                       </Badge>
@@ -1060,7 +1113,6 @@ export default function AdminInstallerPortal() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      touchTarget
                       onClick={() => {
                         setAmcTickets((prev) =>
                           prev.map((x) =>
@@ -1095,7 +1147,7 @@ export default function AdminInstallerPortal() {
       >
         <div className="space-y-4">
           {inspectedDevice && (
-            <div className="rounded-lg border border-border bg-surface-elevated p-3 font-mono text-[11px] space-y-1 tabular-nums">
+            <div className="rounded-lg hairline-border bg-surface-elevated p-3 font-mono text-[11px] space-y-1 tabular-nums">
               <div className="flex justify-between">
                 <span className="text-foreground-muted">Device ID</span>
                 <span className="text-foreground">{inspectedDevice.device_id}</span>

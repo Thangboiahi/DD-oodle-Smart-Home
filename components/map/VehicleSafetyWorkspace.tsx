@@ -5,9 +5,12 @@ import {
   AlertTriangle,
   Battery,
   Car,
+  ChevronDown,
+  ChevronUp,
   Gauge,
   Lock,
   MapPin,
+  MoreHorizontal,
   Navigation,
   Phone,
   Plus,
@@ -29,9 +32,6 @@ import {
   Banner,
   Button,
   Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   Dropdown,
   OtpPinInput,
   PrecisionSlider,
@@ -40,10 +40,9 @@ import {
 } from '@/components/ui';
 import {
   CollapsibleSection,
-  FullscreenStage,
-  ResizableSplit,
   useWorkspace,
 } from '@/components/workspace';
+import { cn } from '@/lib/utils';
 
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
@@ -86,6 +85,8 @@ const DEMO_TRIPS: TripRecord[] = [
   },
 ];
 
+type SheetDetent = 'peek' | 'half' | 'expanded';
+
 export interface VehicleSafetyWorkspaceProps {
   initialDeviceId?: string;
 }
@@ -105,6 +106,8 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
     initialDeviceId || vehicles[0]?.device_id || 'dd_veh01_m4n5p6'
   );
   const [inspectorTab, setInspectorTab] = useState<'hud' | 'trips' | 'geofences' | 'sos'>('hud');
+  const [sheetDetent, setSheetDetent] = useState<SheetDetent>('half');
+  const [testMenuOpen, setTestMenuOpen] = useState(false);
   const [pin, setPin] = useState('');
   const [tripProgressPct, setTripProgressPct] = useState(100);
   const [selectedTripId, setSelectedTripId] = useState(DEMO_TRIPS[0].trip_id);
@@ -137,7 +140,7 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   const isOwner = prefs.userRole === 'OWNER';
   const immobilizeState = vehicle.state.immobilize ?? 'RELEASED';
   const isEngagedOrPending = immobilizeState === 'ENGAGED' || immobilizeState === 'PENDING';
-  const cadenceLabel = tel.speed_kmh >= 5 || tel.ignition ? '5s Moving (G15d)' : '60s Parked (G15d)';
+  const cadenceLabel = tel.speed_kmh >= 5 || tel.ignition ? '10s Moving' : '60s Parked';
 
   const handleImmobilizerAction = () => {
     if (!isOwner) {
@@ -223,207 +226,168 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   );
   const currentWaypoint = selectedTrip.waypoints[waypointIdx];
 
-  const mapPane = (
-    <FullscreenStage
-      title={`${vehicle.name} — Live Telematics`}
-      subtitle={`MapLibre GL · OSM/Protomaps (Zero API Cost) · ${cadenceLabel}`}
-      toolbar={
-        <div className="flex items-center gap-1.5">
-          <Badge variant={tel.ignition ? 'warning' : 'neutral'} dot>
-            {tel.ignition ? 'IGN ON' : 'PARKED'}
-          </Badge>
-          <Badge variant="mono">{tel.speed_kmh.toFixed(0)} km/h</Badge>
-          <Badge variant="mono">
-            <Battery className="h-3 w-3" />
-            <span>{tel.bat_pct}%</span>
-          </Badge>
-        </div>
-      }
-    >
-      <ErrorBoundary>
-        <VehicleLiveMap
-          vehicleDevice={vehicle}
-          onTriggerCrashSos={() => simulatorEngine.triggerVehicleCrash()}
-          onCommandImmobilize={(engage) =>
-            simulatorEngine.sendCommand(vehicle.device_id, { immobilize: engage }, 'pwa_cloud')
-          }
-        />
-      </ErrorBoundary>
-    </FullscreenStage>
-  );
+  const cycleDetent = () => {
+    setSheetDetent((cur) =>
+      cur === 'peek' ? 'half' : cur === 'half' ? 'expanded' : 'peek'
+    );
+  };
 
-  const inspectorPane = (
+  const inspectorContent = (
     <div className="space-y-3">
+      {/* 4-Tab Bar inside Sheet */}
       <SegmentedControl<'hud' | 'trips' | 'geofences' | 'sos'>
         fullWidth
         size="sm"
         ariaLabel="Vehicle Inspector Tabs"
         value={inspectorTab}
-        onChange={setInspectorTab}
+        onChange={(tab) => {
+          setInspectorTab(tab);
+          if (sheetDetent === 'peek') setSheetDetent('half');
+        }}
         options={[
-          { value: 'hud', label: 'Live HUD', icon: <Gauge className="h-3 w-3" /> },
+          { value: 'hud', label: 'HUD', icon: <Gauge className="h-3 w-3" /> },
           { value: 'trips', label: 'Trips', icon: <Route className="h-3 w-3" /> },
           { value: 'geofences', label: 'Zones', icon: <MapPin className="h-3 w-3" /> },
-          { value: 'sos', label: 'SOS / Lock', icon: <Shield className="h-3 w-3" /> },
+          { value: 'sos', label: 'Lock & SOS', icon: <Shield className="h-3 w-3" /> },
         ]}
       />
 
+      {/* TAB 1: Live HUD */}
       {inspectorTab === 'hud' && (
-        <Card className="space-y-3">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Car className="h-4 w-4 text-accent" />
-              <span>Live Telematics HUD</span>
-            </CardTitle>
-            <Badge variant="mono">{cadenceLabel}</Badge>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-2 font-mono text-xs tabular-nums">
-            <div className="rounded border border-border bg-surface-elevated p-2.5">
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2 font-mono text-xs tabular-nums">
+            <div className="rounded-xl border hairline-border bg-surface-elevated/70 p-2.5">
               <div className="text-[10px] text-foreground-muted">SPEED</div>
-              <div className="text-base font-bold">{tel.speed_kmh.toFixed(1)} km/h</div>
+              <div className="text-sm font-bold text-foreground">{tel.speed_kmh.toFixed(1)} km/h</div>
             </div>
-            <div className="rounded border border-border bg-surface-elevated p-2.5">
+            <div className="rounded-xl border hairline-border bg-surface-elevated/70 p-2.5">
               <div className="text-[10px] text-foreground-muted">IGNITION</div>
-              <div className="text-base font-bold">{tel.ignition ? 'ON' : 'OFF'}</div>
+              <div className="text-sm font-bold text-foreground">{tel.ignition ? 'ON' : 'OFF'}</div>
             </div>
-            <div className="rounded border border-border bg-surface-elevated p-2.5">
+            <div className="rounded-xl border hairline-border bg-surface-elevated/70 p-2.5">
               <div className="text-[10px] text-foreground-muted">VEHICLE 12V</div>
-              <div className="text-base font-bold">{tel.ext_v.toFixed(1)} V</div>
+              <div className="text-sm font-bold text-foreground">{tel.ext_v.toFixed(1)} V</div>
             </div>
-            <div className="rounded border border-border bg-surface-elevated p-2.5">
-              <div className="text-[10px] text-foreground-muted">BACKUP BATT</div>
-              <div className="text-base font-bold">{tel.bat_pct}%</div>
+            <div className="rounded-xl border hairline-border bg-surface-elevated/70 p-2.5">
+              <div className="text-[10px] text-foreground-muted">BACKUP CELL</div>
+              <div className="text-sm font-bold text-foreground">{tel.bat_pct}%</div>
             </div>
-            <div className="col-span-2 rounded border border-border bg-surface-elevated p-2.5 flex items-center justify-between">
-              <span className="text-[10px] text-foreground-muted">COORDINATES</span>
-              <span>
-                {tel.lat.toFixed(4)}°N, {tel.lng.toFixed(4)}°E
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          <div className="rounded-xl border hairline-border bg-surface-elevated/50 px-3 py-2 flex items-center justify-between text-xs font-mono tabular-nums">
+            <span className="text-foreground-muted">GPS FIX ({cadenceLabel})</span>
+            <span className="text-foreground font-semibold">
+              {tel.lat.toFixed(4)}°N, {tel.lng.toFixed(4)}°E
+            </span>
+          </div>
+        </div>
       )}
 
+      {/* TAB 2: Trips */}
       {inspectorTab === 'trips' && (
-        <Card className="space-y-3">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Navigation className="h-4 w-4 text-accent" />
-              <span>Trip History &amp; Polyline Replay</span>
-            </CardTitle>
-            <Badge variant="mono">vehicles/{vehicle.device_id}/trips</Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="space-y-1.5">
-              {DEMO_TRIPS.map((trip) => (
-                <button
-                  key={trip.trip_id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedTripId(trip.trip_id);
-                    setTripProgressPct(100);
-                  }}
-                  className={`w-full rounded-[var(--dd-radius-control)] border p-2.5 text-left transition-colors cursor-pointer ${
-                    selectedTripId === trip.trip_id
-                      ? 'border-accent-border bg-accent-soft/60'
-                      : 'border-border bg-surface-elevated'
-                  }`}
-                >
-                  <div className="font-semibold text-foreground">{trip.label}</div>
-                  <div className="text-[11px] font-mono text-foreground-muted tabular-nums mt-0.5">
-                    {trip.date} · {trip.distanceKm} km · {trip.durationMin}m · Max {trip.maxSpeedKmh} km/h
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div className="rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated p-3 space-y-2">
-              <PrecisionSlider
-                label={`Replay Scrubber · ${currentWaypoint.label}`}
-                value={tripProgressPct}
-                min={0}
-                max={100}
-                unit="%"
-                onChange={setTripProgressPct}
-              />
-              <div className="text-[10px] font-mono text-foreground-muted tabular-nums">
-                Waypoint GPS: {currentWaypoint.lat.toFixed(4)}°N, {currentWaypoint.lng.toFixed(4)}°E
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {inspectorTab === 'geofences' && (
-        <Card className="space-y-3">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-accent" />
-              <span>Geofence Zones &amp; Car-to-Home</span>
-            </CardTitle>
-            <Badge variant="accent">ALL-IN FAMILY</Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="space-y-1.5">
-              {geofences.map((g) => (
-                <div
-                  key={g.id}
-                  className="flex items-center justify-between rounded border border-border bg-surface-elevated px-3 py-2"
-                >
-                  <div>
-                    <div className="font-medium text-foreground">{g.name}</div>
-                    <div className="text-[10px] font-mono text-foreground-muted tabular-nums">
-                      Radius: {g.radiusM} m {g.carToHome ? '· Car-to-Home Linked' : ''}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove ${g.name}`}
-                    onClick={() => setGeofences((prev) => prev.filter((x) => x.id !== g.id))}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-danger" />
-                  </Button>
+        <div className="space-y-2.5 text-xs">
+          <div className="space-y-1.5">
+            {DEMO_TRIPS.map((trip) => (
+              <button
+                key={trip.trip_id}
+                type="button"
+                onClick={() => {
+                  setSelectedTripId(trip.trip_id);
+                  setTripProgressPct(100);
+                }}
+                className={cn(
+                  'w-full rounded-xl border p-2.5 text-left transition-colors cursor-pointer',
+                  selectedTripId === trip.trip_id
+                    ? 'border-accent-border bg-accent-soft/60'
+                    : 'hairline-border bg-surface-elevated/60'
+                )}
+              >
+                <div className="font-semibold text-foreground">{trip.label}</div>
+                <div className="text-[11px] font-mono text-foreground-muted tabular-nums mt-0.5">
+                  {trip.date} · {trip.distanceKm} km · {trip.durationMin}m · Max {trip.maxSpeedKmh} km/h
                 </div>
-              ))}
-            </div>
+              </button>
+            ))}
+          </div>
 
-            <div className="pt-2 border-t border-border space-y-2">
-              <input
-                type="text"
-                value={newGeoName}
-                onChange={(e) => setNewGeoName(e.target.value)}
-                placeholder="New zone name (e.g. School Gate)"
-                className="w-full h-9 rounded border border-border bg-surface-elevated px-2.5 text-xs text-foreground"
-              />
-              <PrecisionSlider
-                label="Zone Radius"
-                value={newGeoRadius}
-                min={100}
-                max={2000}
-                step={50}
-                unit=" m"
-                onChange={setNewGeoRadius}
-              />
-              <Button variant="primary" size="sm" className="w-full" onClick={addGeofence}>
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add Geofence Zone</span>
-              </Button>
+          <div className="rounded-xl border hairline-border bg-surface-elevated/60 p-3 space-y-2">
+            <PrecisionSlider
+              label={`Replay · ${currentWaypoint.label}`}
+              value={tripProgressPct}
+              min={0}
+              max={100}
+              unit="%"
+              onChange={setTripProgressPct}
+            />
+            <div className="text-[10px] font-mono text-foreground-muted tabular-nums">
+              Waypoint GPS: {currentWaypoint.lat.toFixed(4)}°N, {currentWaypoint.lng.toFixed(4)}°E
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
+      {/* TAB 3: Geofence Zones */}
+      {inspectorTab === 'geofences' && (
+        <div className="space-y-2.5 text-xs">
+          <div className="space-y-1.5">
+            {geofences.map((g) => (
+              <div
+                key={g.id}
+                className="flex items-center justify-between rounded-xl border hairline-border bg-surface-elevated/60 px-3 py-2"
+              >
+                <div>
+                  <div className="font-medium text-foreground">{g.name}</div>
+                  <div className="text-[10px] font-mono text-foreground-muted tabular-nums">
+                    Radius: {g.radiusM} m {g.carToHome ? '· Car-to-Home Linked' : ''}
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove ${g.name}`}
+                  onClick={() => setGeofences((prev) => prev.filter((x) => x.id !== g.id))}
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-danger" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="pt-2 border-t hairline-border space-y-2">
+            <input
+              type="text"
+              value={newGeoName}
+              onChange={(e) => setNewGeoName(e.target.value)}
+              placeholder="New zone name (e.g. School Gate)"
+              className="w-full h-9 rounded-xl border border-border bg-surface-elevated px-2.5 text-xs text-foreground"
+            />
+            <PrecisionSlider
+              label="Zone Radius"
+              value={newGeoRadius}
+              min={100}
+              max={2000}
+              step={50}
+              unit=" m"
+              onChange={setNewGeoRadius}
+            />
+            <Button variant="primary" size="sm" className="w-full" onClick={addGeofence}>
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add Geofence Zone</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: PIN-Gated Starter Interlock & G14 Emergency Contacts */}
       {inspectorTab === 'sos' && (
-        <div className="space-y-3">
-          {/* G15a-c Starter Immobilizer Workflow */}
-          <Card className="space-y-3">
-            <CardHeader>
+        <div className="space-y-3 text-xs">
+          <div className="rounded-xl border hairline-border bg-surface-elevated/50 p-3 space-y-3">
+            <div className="flex items-start justify-between gap-2">
               <div>
-                <CardTitle className="flex items-center gap-2">
+                <div className="font-semibold text-foreground flex items-center gap-1.5">
                   <Shield className="h-4 w-4 text-accent" />
                   <span>Starter-Only Immobilizer (G15a–c)</span>
-                </CardTitle>
+                </div>
                 <p className="text-[11px] text-foreground-muted mt-0.5">
                   Engages only when ignition == OFF &amp; speed &lt; 5 km/h.
                 </p>
@@ -440,65 +404,63 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
               >
                 {immobilizeState}
               </Badge>
-            </CardHeader>
+            </div>
 
-            <CardContent className="space-y-3 text-xs">
-              {vehicle.state.immobilize_reason && (
-                <div className="rounded border border-warning/40 bg-warning-soft px-2.5 py-1.5 font-mono text-[11px]">
-                  Reason: {vehicle.state.immobilize_reason}
-                </div>
+            {vehicle.state.immobilize_reason && (
+              <div className="rounded-lg border border-warning/40 bg-warning-soft px-2.5 py-1.5 font-mono text-[11px]">
+                Reason: {vehicle.state.immobilize_reason}
+              </div>
+            )}
+
+            {!isOwner && (
+              <Banner
+                tone="critical"
+                title="Owner-Only Security Gate"
+                description="Your active role is MEMBER. Switch to OWNER in Settings to actuate set.immobilize."
+              />
+            )}
+
+            {!isEngagedOrPending && isOwner && (
+              <OtpPinInput
+                length={4}
+                masked
+                label="Owner 4-Digit Safety Confirmation PIN"
+                value={pin}
+                onChange={setPin}
+              />
+            )}
+
+            <Button
+              variant={isEngagedOrPending ? 'secondary' : 'danger'}
+              className="w-full"
+              touchTarget
+              disabled={!isOwner}
+              onClick={handleImmobilizerAction}
+            >
+              {isEngagedOrPending ? (
+                <Unlock className="h-4 w-4" />
+              ) : (
+                <Lock className="h-4 w-4" />
               )}
-
-              {!isOwner && (
-                <Banner
-                  tone="critical"
-                  title="Owner-Only Security Gate (database.rules.json)"
-                  description="Your active role is MEMBER. Switch to OWNER in Settings to actuate set.immobilize."
-                />
-              )}
-
-              {!isEngagedOrPending && isOwner && (
-                <OtpPinInput
-                  length={4}
-                  masked
-                  label="Owner Safety Confirmation PIN"
-                  value={pin}
-                  onChange={setPin}
-                />
-              )}
-
-              <Button
-                variant={isEngagedOrPending ? 'secondary' : 'danger'}
-                className="w-full"
-                touchTarget
-                disabled={!isOwner}
-                onClick={handleImmobilizerAction}
-              >
-                {isEngagedOrPending ? (
-                  <Unlock className="h-4 w-4" />
-                ) : (
-                  <Lock className="h-4 w-4" />
-                )}
-                <span>
-                  {isEngagedOrPending ? 'Release Starter Interlock' : 'Engage Starter Immobilizer'}
-                </span>
-              </Button>
-            </CardContent>
-          </Card>
+              <span>
+                {isEngagedOrPending ? 'Release Starter Interlock' : 'Engage Starter Immobilizer'}
+              </span>
+            </Button>
+          </div>
 
           {/* G14 Emergency Contacts (0-3 E.164, sms_fallback locked ON) */}
           <CollapsibleSection
             sectionId="veh_g14_contacts"
             title="Emergency Contacts (G14 · 0–3 E.164)"
-            subtitle="Synced to .../config with hardware GSM fallback"
+            subtitle="sms_fallback: LOCKED ON"
             icon={<Phone className="h-3.5 w-3.5" />}
-            badge={<Badge variant="success">sms_fallback: LOCKED ON</Badge>}
+            defaultCollapsed={false}
           >
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2 text-xs">
               {contacts.map((c) => (
                 <div
                   key={c}
-                  className="flex items-center justify-between rounded border border-border bg-surface-elevated px-2.5 py-1.5 font-mono"
+                  className="flex items-center justify-between rounded-lg border hairline-border bg-surface-elevated px-2.5 py-1.5 font-mono"
                 >
                   <span className="tabular-nums">{c}</span>
                   <button
@@ -517,7 +479,7 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
                   value={newContact}
                   onChange={(e) => setNewContact(e.target.value)}
                   placeholder="+919862000000"
-                  className="flex-1 h-9 rounded border border-border bg-surface-elevated px-2.5 font-mono text-xs text-foreground"
+                  className="flex-1 h-8 rounded-lg border border-border bg-surface-elevated px-2.5 font-mono text-xs text-foreground"
                 />
                 <Button variant="primary" size="sm" onClick={addEmergencyContact}>
                   <Plus className="h-3.5 w-3.5" />
@@ -537,52 +499,209 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   );
 
   return (
-    <div className="space-y-4">
-      {/* Compact Top Vehicle Context Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <Dropdown
-            ariaLabel="Select vehicle"
-            value={vehicle.device_id}
-            onChange={setSelectedId}
-            options={vehicles.map((v) => ({
-              value: v.device_id,
-              label: v.name,
-              description: v.device_id,
-              badge: v.state.immobilize ?? 'RELEASED',
-              icon: <Car className="h-3.5 w-3.5" />,
-            }))}
-          />
-          <Badge variant="mono">{cadenceLabel}</Badge>
+    <div className="relative">
+      {/* Desktop / Large Screen Layout: Clean Map + Side Panel */}
+      <div className="hidden lg:grid lg:grid-cols-12 gap-3 items-start">
+        <div className="lg:col-span-8 relative rounded-2xl border hairline-border overflow-hidden min-h-[580px] bg-surface">
+          {/* Minimal Floating Top Pill on Map */}
+          <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between gap-2 pointer-events-none">
+            <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border hairline-border bg-surface/90 backdrop-blur-md px-2.5 py-1.5 shadow-lg">
+              <Dropdown
+                ariaLabel="Select vehicle"
+                value={vehicle.device_id}
+                onChange={setSelectedId}
+                triggerClassName="h-7 min-h-0 px-2 text-xs"
+                options={vehicles.map((v) => ({
+                  value: v.device_id,
+                  label: v.name,
+                  badge: v.state.immobilize ?? 'RELEASED',
+                  icon: <Car className="h-3.5 w-3.5" />,
+                }))}
+              />
+              <Badge variant={tel.ignition ? 'warning' : 'neutral'} dot>
+                {tel.ignition ? `${tel.speed_kmh.toFixed(0)} km/h` : 'PARKED'}
+              </Badge>
+              <Badge variant="mono">
+                <Battery className="h-3 w-3" />
+                <span>{tel.bat_pct}%</span>
+              </Badge>
+            </div>
+
+            <div className="pointer-events-auto flex items-center gap-1.5 rounded-2xl border hairline-border bg-surface/90 backdrop-blur-md px-2 py-1 shadow-lg">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => simulatorEngine.triggerVehicleCrash()}
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>Test 20s Crash SOS</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => simulatorEngine.triggerVehicleFaultAlert('EXT_POWER_LOST')}
+              >
+                <span>Test 12V Cut</span>
+              </Button>
+            </div>
+          </div>
+
+          <ErrorBoundary>
+            <VehicleLiveMap
+              vehicleDevice={vehicle}
+              onTriggerCrashSos={() => simulatorEngine.triggerVehicleCrash()}
+              onCommandImmobilize={(engage) =>
+                simulatorEngine.sendCommand(vehicle.device_id, { immobilize: engage }, 'pwa_cloud')
+              }
+            />
+          </ErrorBoundary>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="danger"
-            size="sm"
-            touchTarget
-            onClick={() => simulatorEngine.triggerVehicleCrash()}
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            <span>Test 20s Crash SOS</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => simulatorEngine.triggerVehicleFaultAlert('SOS_MANUAL')}
-          >
-            <span>Test Manual SOS</span>
-          </Button>
+        <div className="lg:col-span-4 rounded-2xl border hairline-border bg-surface/85 p-3.5 space-y-3">
+          {inspectorContent}
         </div>
       </div>
 
-      {/* Responsive Split-Pane: Map + Inspector */}
-      <ResizableSplit
-        splitId="vehicle_workspace_split"
-        defaultPrimaryPct={62}
-        primary={mapPane}
-        secondary={inspectorPane}
-      />
+      {/* Mobile & Tablet Layout: Full-Bleed MapLibre Canvas + Multi-Detent Collapsible Bottom Sheet (Peek -> Half -> Expanded) */}
+      <div className="lg:hidden relative h-[calc(100vh-132px)] min-h-[500px] rounded-2xl border hairline-border overflow-hidden bg-surface">
+        {/* Minimal Floating Top Pill */}
+        <div className="absolute top-2.5 inset-x-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border hairline-border bg-surface/90 backdrop-blur-md px-2.5 py-1 shadow-lg">
+            <Car className="h-3.5 w-3.5 text-accent shrink-0" />
+            <span className="text-xs font-semibold text-foreground truncate max-w-[115px]">
+              {vehicle.name}
+            </span>
+            <Badge variant={tel.ignition ? 'warning' : 'neutral'} dot className="text-[10px]">
+              {tel.ignition ? `${tel.speed_kmh.toFixed(0)} km/h` : 'PARKED'}
+            </Badge>
+          </div>
+
+          <div className="pointer-events-auto relative">
+            <button
+              type="button"
+              onClick={() => setTestMenuOpen((o) => !o)}
+              aria-label="Test vehicle alerts"
+              className="inline-flex h-8 items-center gap-1 rounded-full border hairline-border bg-surface/90 backdrop-blur-md px-2.5 text-[11px] font-medium text-foreground shadow-lg cursor-pointer"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 text-danger" />
+              <span>SOS Sim</span>
+              <MoreHorizontal className="h-3.5 w-3.5 text-foreground-muted" />
+            </button>
+
+            {testMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-border bg-surface shadow-2xl p-1.5 z-30 space-y-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    simulatorEngine.triggerVehicleCrash();
+                    setTestMenuOpen(false);
+                  }}
+                  className="w-full text-left rounded-lg px-2.5 py-2 text-danger font-semibold hover:bg-danger/10 cursor-pointer"
+                >
+                  Trigger 20s Crash SOS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    simulatorEngine.triggerVehicleFaultAlert('SOS_MANUAL');
+                    setTestMenuOpen(false);
+                  }}
+                  className="w-full text-left rounded-lg px-2.5 py-2 text-foreground hover:bg-surface-elevated cursor-pointer"
+                >
+                  Trigger Manual SOS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    simulatorEngine.triggerVehicleFaultAlert('EXT_POWER_LOST');
+                    setTestMenuOpen(false);
+                  }}
+                  className="w-full text-left rounded-lg px-2.5 py-2 text-warning hover:bg-surface-elevated cursor-pointer"
+                >
+                  Simulate 12V Battery Cut
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* MapLibre Canvas */}
+        <div className="absolute inset-0">
+          <ErrorBoundary>
+            <VehicleLiveMap
+              vehicleDevice={vehicle}
+              onTriggerCrashSos={() => simulatorEngine.triggerVehicleCrash()}
+              onCommandImmobilize={(engage) =>
+                simulatorEngine.sendCommand(vehicle.device_id, { immobilize: engage }, 'pwa_cloud')
+              }
+            />
+          </ErrorBoundary>
+        </div>
+
+        {/* Multi-Detent Collapsible Bottom Sheet (Peek -> Half -> Expanded) */}
+        <div
+          className={cn(
+            'absolute inset-x-0 bottom-0 z-20 rounded-t-2xl border-t hairline-border bg-surface/95 backdrop-blur-xl shadow-2xl transition-all duration-200 flex flex-col',
+            sheetDetent === 'peek'
+              ? 'h-[88px]'
+              : sheetDetent === 'half'
+              ? 'h-[50%]'
+              : 'h-[84%]'
+          )}
+        >
+          {/* Sheet Grab Handle & Detent Switcher Bar */}
+          <div className="px-3.5 pt-2 pb-1.5 border-b hairline-border flex items-center justify-between gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={cycleDetent}
+              className="flex items-center gap-2 text-left min-w-0 flex-1 cursor-pointer"
+            >
+              <span className="h-1.5 w-8 rounded-full bg-border-strong shrink-0" />
+              <span className="text-xs font-semibold text-foreground truncate">
+                {vehicle.name}
+              </span>
+              <span className="text-[11px] font-mono text-foreground-muted tabular-nums">
+                · {tel.ext_v.toFixed(1)}V · {immobilizeState}
+              </span>
+            </button>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {(['peek', 'half', 'expanded'] as const).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setSheetDetent(d)}
+                  className={cn(
+                    'rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase cursor-pointer',
+                    sheetDetent === d
+                      ? 'bg-accent text-[var(--dd-accent-fg)] font-semibold'
+                      : 'text-foreground-muted hover:text-foreground'
+                  )}
+                >
+                  {d}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={cycleDetent}
+                aria-label="Toggle sheet height"
+                className="p-1 text-foreground-muted hover:text-foreground cursor-pointer"
+              >
+                {sheetDetent === 'expanded' ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronUp className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Sheet Body */}
+          <div className="flex-1 overflow-y-auto dd-scroll p-3">
+            {inspectorContent}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

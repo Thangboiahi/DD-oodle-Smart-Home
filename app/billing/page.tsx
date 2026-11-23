@@ -7,6 +7,7 @@ import {
   CreditCard,
   ShieldCheck,
   Sparkles,
+  X,
   Zap,
 } from 'lucide-react';
 import { SubscriptionTier } from '@/lib/protocol/contract';
@@ -27,6 +28,8 @@ import {
   TactileSwitch,
   useToast,
 } from '@/components/ui';
+import { CollapsibleSection } from '@/components/workspace';
+import { cn } from '@/lib/utils';
 
 type PlanPreviewScenario = 'trial' | 'expired_core' | 'plus' | 'shield' | 'all_in_family';
 
@@ -104,6 +107,7 @@ export default function BillingPage() {
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionTier>('plus');
   const [dfyPurchased, setDfyPurchased] = useState(false);
   const [upiId, setUpiId] = useState('family@okaxis');
+  const [upiModalOpen, setUpiModalOpen] = useState(false);
 
   const [reminders, setReminders] = useState({
     d30: true,
@@ -148,25 +152,37 @@ export default function BillingPage() {
 
   const generateUpiLink = () => {
     const upiUrl = `upi://pay?pa=ddoodle.billing@icici&pn=DD%20oodle%20Smart%20Home&am=${payableInr}&cu=INR&tn=${selectedPlan.toUpperCase()}_${billingCycle.toUpperCase()}`;
+    setUpiModalOpen(false);
     pushToast({
-      title: `UPI Payment Link Ready (₹${payableInr})`,
+      title: `UPI Payment Dispatched (₹${payableInr.toLocaleString('en-IN')})`,
       description: `VPA ${upiId} · ${upiUrl.slice(0, 56)}...`,
       tone: 'success',
     });
   };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
-            Subscription, Trial &amp; Anti-Bricking Floor
-          </h1>
-          <p className="text-xs text-foreground-secondary font-mono">
-            homes/home_imphal_001/subscription · Effective Tier:{' '}
-            <strong className="text-accent uppercase">{entitlements.effectiveTier}</strong>
-          </p>
+    <div className="max-w-5xl mx-auto space-y-3">
+      {/* Compact Top Plan Summary Pill Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border hairline-border bg-surface/80 px-3.5 py-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-base font-semibold tracking-tight text-foreground">
+                Plans &amp; Core Guarantee
+              </h1>
+              <Badge variant="accent">
+                ACTIVE: {entitlements.effectiveTier.toUpperCase()}
+              </Badge>
+              {entitlements.isTrialActive && (
+                <Badge variant="success">
+                  {entitlements.trialDaysRemaining}d Trial Left
+                </Badge>
+              )}
+            </div>
+            <p className="text-[11px] font-mono text-foreground-muted">
+              homes/home_imphal_001/subscription · Zero Cloud Lock-In
+            </p>
+          </div>
         </div>
 
         <SegmentedControl<PlanPreviewScenario>
@@ -184,36 +200,24 @@ export default function BillingPage() {
         />
       </div>
 
-      {/* 90-Day Trial Countdown or Graceful Downgrade Banner */}
-      {entitlements.isTrialActive ? (
-        <Banner
-          tone="info"
-          title={`90-Day Plus Trial Active — ${entitlements.trialDaysRemaining} Days Remaining`}
-          description="You have full access to the 3D Home Twin, Pro Logic Automations, Voice C2C, and 90-day analytics. No card required."
-        />
-      ) : entitlements.degradedToCore ? (
+      {/* Graceful Downgrade Notice when testing Expired -> Core */}
+      {entitlements.degradedToCore && (
         <Banner
           tone="warning"
           title="Plan Expired — Gracefully Degraded to Core (Free Forever)"
           description="All 4-Tier Fail-Safe controls, 2D Room Grid, up to 5 local schedules, 24h logs, standard FCM push, and hardware safety cutoffs remain 100% unlocked."
         />
-      ) : null}
+      )}
 
-      {/* Core Free Forever Anti-Bricking Floor Card */}
-      <Card className="border-success/40">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-success" />
-            <div>
-              <CardTitle>Core (Free Forever — Anti-Bricking Guarantee)</CardTitle>
-              <p className="text-xs text-foreground-secondary">
-                Hardware never bricks or locks out if a subscription expires.
-              </p>
-            </div>
-          </div>
-          <Badge variant="success">₹0 FOREVER</Badge>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
+      {/* Collapsible Core Free Forever Guarantee Accordion */}
+      <CollapsibleSection
+        sectionId="billing_core_free_forever_accordion"
+        title="Core (Free Forever) — Hard Anti-Bricking Guarantee"
+        subtitle="₹0 Forever · Hardware never locks out"
+        icon={<ShieldCheck className="h-4 w-4 text-success" />}
+        defaultCollapsed={false}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
           {[
             '4-Tier Fail-Safe Control (Cloud / Hub / LAN / BLE)',
             '2D Room Grid & Capability Switchboards',
@@ -224,32 +228,33 @@ export default function BillingPage() {
           ].map((item) => (
             <div
               key={item}
-              className="flex items-center gap-2 rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-foreground"
+              className="flex items-center gap-2 rounded-xl border hairline-border bg-surface-elevated/60 px-2.5 py-2 text-foreground"
             >
               <Check className="h-3.5 w-3.5 text-success shrink-0" />
               <span>{item}</span>
             </div>
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleSection>
 
-      {/* Billing Cycle Toggle + DFY 3D Add-On Status */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Billing Cycle Toggle + DFY 3D Add-On Pill */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border hairline-border bg-surface/75 px-3 py-2">
         <SegmentedControl<'annual' | 'monthly'>
+          size="sm"
           ariaLabel="Billing Cycle"
           value={billingCycle}
           onChange={setBillingCycle}
           options={[
-            { value: 'annual', label: 'Annual UPI (Save ~16%)' },
+            { value: 'annual', label: 'Annual UPI (Save 16%)' },
             { value: 'monthly', label: 'Monthly' },
           ]}
         />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant={dfyPurchased ? 'success' : 'accent'}>
             <Sparkles className="h-3 w-3" />
             <span>
-              DFY 3D Twin Add-On: ₹{DFY_3D_TWIN_ADDON_INR} One-Time ({dfyPurchased ? 'OWNED' : 'AVAILABLE'})
+              DFY 3D Twin: ₹{DFY_3D_TWIN_ADDON_INR} One-Time ({dfyPurchased ? 'OWNED' : 'ADD-ON'})
             </span>
           </Badge>
           <Button
@@ -264,79 +269,102 @@ export default function BillingPage() {
               });
             }}
           >
-            {dfyPurchased ? 'Owned' : `Add ₹${DFY_3D_TWIN_ADDON_INR}`}
+            {dfyPurchased ? 'Owned' : `+ Add ₹${DFY_3D_TWIN_ADDON_INR}`}
           </Button>
         </div>
       </div>
 
-      {/* Responsive Plan Comparison — Stacked Cards on Mobile, Clean Table on Desktop */}
-      <div className="grid grid-cols-1 md:hidden gap-3">
+      {/* Mobile: Horizontal Swipeable Snap-Carousel of Plan Cards (Zero Vertical Wall) */}
+      <div className="md:hidden snap-strip gap-3 pb-1">
         {(Object.keys(TIER_CATALOG) as SubscriptionTier[]).map((tierKey) => {
           const meta = TIER_CATALOG[tierKey];
           const price = billingCycle === 'annual' ? meta.annualInr : meta.monthlyInr;
           const isSelected = selectedPlan === tierKey;
           return (
-            <Card
+            <div
               key={tierKey}
-              className={isSelected ? 'border-accent-border ring-1 ring-accent/25' : undefined}
+              className={cn(
+                'snap-center shrink-0 w-[275px] rounded-2xl border bg-surface p-3.5 flex flex-col justify-between space-y-3',
+                isSelected
+                  ? 'border-accent ring-1 ring-accent/30'
+                  : 'hairline-border'
+              )}
             >
-              <CardHeader>
-                <div>
-                  <CardTitle>{meta.displayName}</CardTitle>
-                  {meta.trialDays > 0 && (
-                    <Badge variant="accent" className="mt-1">
-                      {meta.trialDays}-Day Free Trial
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-right font-mono tabular-nums">
-                  <div className="text-lg font-bold">
-                    {price === 0 ? '₹0' : `₹${price.toLocaleString('en-IN')}`}
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">{meta.displayName}</div>
+                    {meta.trialDays > 0 && (
+                      <Badge variant="accent" className="mt-1 text-[10px]">
+                        {meta.trialDays}-Day Free Trial
+                      </Badge>
+                    )}
                   </div>
-                  <div className="text-[10px] text-foreground-muted">
-                    {price === 0 ? 'FOREVER' : billingCycle === 'annual' ? '/ YEAR' : '/ MONTH'}
+                  <div className="text-right font-mono tabular-nums">
+                    <div className="text-base font-bold text-accent">
+                      {price === 0 ? '₹0' : `₹${price.toLocaleString('en-IN')}`}
+                    </div>
+                    <div className="text-[10px] text-foreground-muted">
+                      {price === 0 ? 'FOREVER' : billingCycle === 'annual' ? '/ YEAR' : '/ MONTH'}
+                    </div>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3 text-xs">
-                <p className="text-foreground-secondary">{meta.summary}</p>
-                {tierKey !== 'core' && (
-                  <Button
-                    variant={isSelected ? 'primary' : 'secondary'}
-                    className="w-full"
-                    touchTarget
-                    onClick={() => setSelectedPlan(tierKey)}
-                  >
-                    {isSelected ? 'Selected for UPI Renewal' : `Select ${meta.displayName}`}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
+                <p className="text-xs text-foreground-secondary leading-relaxed">
+                  {meta.summary}
+                </p>
+              </div>
+
+              {tierKey !== 'core' ? (
+                <Button
+                  variant={isSelected ? 'primary' : 'secondary'}
+                  size="sm"
+                  className="w-full"
+                  touchTarget
+                  onClick={() => {
+                    setSelectedPlan(tierKey);
+                    setUpiModalOpen(true);
+                  }}
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  <span>Renew via UPI</span>
+                </Button>
+              ) : (
+                <div className="rounded-xl border border-success/35 bg-success-soft py-2 text-center text-[11px] font-mono font-semibold text-success">
+                  INCLUDED FOREVER
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
 
-      {/* Tablet/Desktop Comparison Matrix Table */}
-      <Card noPadding className="hidden md:block overflow-hidden">
+      {/* Tablet / Desktop Comparison Matrix Table */}
+      <Card noPadding className="hidden md:block overflow-hidden rounded-2xl hairline-border">
         <div className="overflow-x-auto dd-scroll">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="border-b border-border bg-surface-elevated">
+              <tr className="border-b hairline-border bg-surface-elevated/60">
                 <th className="p-3.5 font-semibold text-foreground-secondary">Capability / SLA</th>
                 {(Object.keys(TIER_CATALOG) as SubscriptionTier[]).map((tierKey) => {
                   const meta = TIER_CATALOG[tierKey];
                   const price = billingCycle === 'annual' ? meta.annualInr : meta.monthlyInr;
                   const isSelected = selectedPlan === tierKey;
                   return (
-                    <th key={tierKey} className="p-3.5 align-top">
+                    <th key={tierKey} className="p-3 align-top">
                       <button
                         type="button"
-                        onClick={() => tierKey !== 'core' && setSelectedPlan(tierKey)}
-                        className={`text-left w-full rounded-lg p-2 border transition-colors cursor-pointer ${
+                        onClick={() => {
+                          if (tierKey !== 'core') {
+                            setSelectedPlan(tierKey);
+                            setUpiModalOpen(true);
+                          }
+                        }}
+                        className={cn(
+                          'text-left w-full rounded-xl p-2.5 border transition-colors cursor-pointer',
                           isSelected
                             ? 'border-accent-border bg-accent-soft/60'
                             : 'border-transparent hover:bg-surface-muted'
-                        }`}
+                        )}
                       >
                         <div className="font-semibold text-foreground">{meta.displayName}</div>
                         <div className="font-mono text-sm font-bold text-accent tabular-nums mt-0.5">
@@ -344,9 +372,9 @@ export default function BillingPage() {
                             ? '₹0 Forever'
                             : `₹${price.toLocaleString('en-IN')}/${billingCycle === 'annual' ? 'yr' : 'mo'}`}
                         </div>
-                        {meta.trialDays > 0 && (
-                          <div className="text-[10px] font-mono text-success mt-0.5">
-                            90-day trial
+                        {tierKey !== 'core' && (
+                          <div className="text-[10px] font-mono text-foreground-muted mt-1 underline">
+                            Renew via UPI →
                           </div>
                         )}
                       </button>
@@ -357,7 +385,7 @@ export default function BillingPage() {
             </thead>
             <tbody>
               {MATRIX_ROWS.map((row) => (
-                <tr key={row.feature} className="border-b border-border/60 last:border-b-0">
+                <tr key={row.feature} className="border-b hairline-border last:border-b-0">
                   <td className="p-3.5 font-medium text-foreground">{row.feature}</td>
                   <td className="p-3.5 font-mono text-foreground-secondary">{row.core}</td>
                   <td className="p-3.5 font-mono text-foreground">{row.plus}</td>
@@ -371,73 +399,121 @@ export default function BillingPage() {
         </div>
       </Card>
 
-      {/* UPI Annual Payment Link & Renewal Reminder Preferences */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 dd-grid-gap">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-accent" />
-              <span>UPI Instant Renewal ({activeTierMeta.displayName})</span>
-            </CardTitle>
-            <Badge variant="mono">
-              ₹{payableInr.toLocaleString('en-IN')}/{billingCycle === 'annual' ? 'yr' : 'mo'}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 text-xs">
+      {/* Collapsible Renewal Reminders & Instant UPI Action Bar */}
+      <CollapsibleSection
+        sectionId="billing_renewal_reminders"
+        title="Renewal Reminders & UPI Checkout"
+        subtitle={`${activeTierMeta.displayName} · ₹${payableInr.toLocaleString('en-IN')}/${billingCycle === 'annual' ? 'yr' : 'mo'}`}
+        icon={<Bell className="h-3.5 w-3.5" />}
+        defaultCollapsed={true}
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setUpiModalOpen(true)}
+          >
+            <CreditCard className="h-3.5 w-3.5" />
+            <span>Open UPI Checkout</span>
+          </Button>
+        }
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+          <TactileSwitch
+            label="D-30 Early Reminder"
+            sublabel="30 days before expiry via FCM & WhatsApp"
+            checked={reminders.d30}
+            onChange={(next) => setReminders((r) => ({ ...r, d30: next }))}
+          />
+          <TactileSwitch
+            label="D-7 Renewal Notice"
+            sublabel="7 days before expiry with 1-tap UPI link"
+            checked={reminders.d7}
+            onChange={(next) => setReminders((r) => ({ ...r, d7: next }))}
+          />
+          <TactileSwitch
+            label="D-1 Final Grace Notice"
+            sublabel="Reminds that Core Free Floor stays active"
+            checked={reminders.d1}
+            onChange={(next) => setReminders((r) => ({ ...r, d1: next }))}
+          />
+        </div>
+      </CollapsibleSection>
+
+      {/* Modal / Bottom Sheet UPI Renewal Dialog */}
+      {upiModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 backdrop-blur-sm p-0 sm:p-4"
+          onClick={() => setUpiModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="upi-checkout-title"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-surface shadow-2xl p-4 sm:p-5 space-y-4 text-xs"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-accent" />
+                  <h2 id="upi-checkout-title" className="text-sm font-semibold text-foreground">
+                    UPI Instant Renewal ({activeTierMeta.displayName})
+                  </h2>
+                </div>
+                <p className="text-[11px] text-foreground-muted mt-0.5">
+                  Zero auto-debit trap · Manual annual or monthly UPI intent
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUpiModalOpen(false)}
+                aria-label="Close UPI modal"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-elevated text-foreground-secondary hover:text-foreground cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border hairline-border bg-surface-elevated/70 p-3 flex items-center justify-between font-mono">
+              <div>
+                <div className="text-[10px] text-foreground-muted">SELECTED PLAN</div>
+                <div className="text-sm font-bold text-foreground">{activeTierMeta.displayName}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] text-foreground-muted uppercase">{billingCycle}</div>
+                <div className="text-base font-bold text-accent tabular-nums">
+                  ₹{payableInr.toLocaleString('en-IN')}
+                </div>
+              </div>
+            </div>
+
             <label className="block space-y-1">
-              <span className="text-foreground-secondary font-medium">Your UPI VPA</span>
+              <span className="text-foreground-secondary font-medium">Your UPI VPA (GPay / PhonePe / Paytm)</span>
               <input
                 type="text"
                 value={upiId}
                 onChange={(e) => setUpiId(e.target.value)}
-                className="w-full h-10 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground focus:outline-none focus:border-accent"
+                className="w-full h-10 rounded-xl border border-border bg-surface-elevated px-3 font-mono text-xs text-foreground focus:outline-none focus:border-accent"
               />
             </label>
-            <Button
-              variant="primary"
-              className="w-full"
-              touchTarget
-              disabled={payableInr === 0}
-              onClick={generateUpiLink}
-            >
-              <Zap className="h-3.5 w-3.5" />
-              <span>
-                Pay ₹{payableInr.toLocaleString('en-IN')} via UPI ({activeTierMeta.displayName})
-              </span>
-            </Button>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-4 w-4 text-accent" />
-              <span>Renewal Reminder Preferences</span>
-            </CardTitle>
-            <Badge variant="mono">WHATSAPP + PUSH</Badge>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <TactileSwitch
-              label="D-30 Advance Reminder"
-              sublabel="30 days before expiry via WhatsApp & FCM"
-              checked={reminders.d30}
-              onChange={(v) => setReminders((r) => ({ ...r, d30: v }))}
-            />
-            <TactileSwitch
-              label="D-7 Renewal Reminder"
-              sublabel="7 days before expiry with 1-tap UPI link"
-              checked={reminders.d7}
-              onChange={(v) => setReminders((r) => ({ ...r, d7: v }))}
-            />
-            <TactileSwitch
-              label="D-1 Final Notice"
-              sublabel="24 hours before graceful Core Floor fallback"
-              checked={reminders.d1}
-              onChange={(v) => setReminders((r) => ({ ...r, d1: v }))}
-            />
-          </CardContent>
-        </Card>
-      </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t hairline-border">
+              <Button variant="ghost" size="sm" onClick={() => setUpiModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                touchTarget
+                disabled={payableInr === 0}
+                onClick={generateUpiLink}
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span>Pay ₹{payableInr.toLocaleString('en-IN')} via UPI</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
