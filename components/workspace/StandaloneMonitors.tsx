@@ -69,11 +69,15 @@ export const MONITOR_CATALOG: MonitorMeta[] = [
   },
 ];
 
-export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monitorId }) => {
+export const StandaloneMonitorWidget: React.FC<{
+  monitorId: string;
+  customTitle?: string;
+}> = ({ monitorId, customTitle }) => {
   const { snapshot, prefs } = useWorkspace();
   const { pushToast } = useToast();
   const devicesList = Object.values(snapshot.devices);
   const tariff = prefs.tariffInr || 7.5;
+  const titleOverride = customTitle?.trim() || undefined;
 
   const totalWatts = devicesList.reduce((acc, d) => {
     const p = d.telemetry as { p?: number };
@@ -91,8 +95,8 @@ export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monit
     return (
       <Card className="h-full space-y-1.5">
         <div className="flex items-center justify-between text-[11px] text-foreground-muted">
-          <span>Live Energy &amp; INR</span>
-          <Zap className="h-3.5 w-3.5 text-primary" />
+          <span className="truncate">{titleOverride ?? 'Live Energy & INR'}</span>
+          <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
         </div>
         <div className="text-xl font-semibold font-mono tabular-nums text-foreground">
           {totalWatts.toFixed(0)} <span className="text-xs font-normal text-foreground-muted">W</span>
@@ -112,8 +116,8 @@ export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monit
     return (
       <Card className="h-full space-y-1.5">
         <div className="flex items-center justify-between text-[11px] text-foreground-muted">
-          <span>Water Tank (WAT-01)</span>
-          <Droplets className="h-3.5 w-3.5 text-primary" />
+          <span className="truncate">{titleOverride ?? 'Water Tank (WAT-01)'}</span>
+          <Droplets className="h-3.5 w-3.5 text-primary shrink-0" />
         </div>
         <div className="flex items-baseline justify-between">
           <span className="text-xl font-semibold font-mono tabular-nums text-foreground">{pct}%</span>
@@ -144,8 +148,8 @@ export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monit
     return (
       <Card className="h-full space-y-1.5">
         <div className="flex items-center justify-between text-[11px] text-foreground-muted">
-          <span>Hub &amp; Network Health</span>
-          <Radio className="h-3.5 w-3.5 text-tertiary" />
+          <span className="truncate">{titleOverride ?? 'Hub & Network Health'}</span>
+          <Radio className="h-3.5 w-3.5 text-tertiary shrink-0" />
         </div>
         <div className="text-xl font-semibold font-mono tabular-nums text-foreground">
           {onlineCount} / {devicesList.length}{' '}
@@ -166,8 +170,8 @@ export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monit
     return (
       <Card className="h-full space-y-1.5">
         <div className="flex items-center justify-between text-[11px] text-foreground-muted">
-          <span>Vehicle Safety (VEH-01)</span>
-          <Car className="h-3.5 w-3.5 text-primary" />
+          <span className="truncate">{titleOverride ?? 'Vehicle Safety (VEH-01)'}</span>
+          <Car className="h-3.5 w-3.5 text-primary shrink-0" />
         </div>
         <div className="flex items-baseline justify-between font-mono tabular-nums">
           <span className="text-xl font-semibold text-foreground">
@@ -193,9 +197,9 @@ export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monit
     return (
       <Card className="h-full space-y-2">
         <div className="flex items-center justify-between text-[11px] text-foreground-muted">
-          <span>Active Faults &amp; Safety</span>
+          <span className="truncate">{titleOverride ?? 'Active Faults & Safety'}</span>
           <AlertTriangle
-            className={`h-3.5 w-3.5 ${faultDevs.length > 0 || hasSos ? 'text-danger' : 'text-success'}`}
+            className={`h-3.5 w-3.5 shrink-0 ${faultDevs.length > 0 || hasSos ? 'text-danger' : 'text-success'}`}
           />
         </div>
         {faultDevs.length === 0 && !hasSos ? (
@@ -237,9 +241,9 @@ export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monit
     return (
       <Card className="h-full space-y-2.5">
         <div className="flex items-center justify-between text-[11px] text-foreground-muted">
-          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-            <Play className="h-3.5 w-3.5 text-primary" />
-            <span>1-Tap Indian Quick Scenes</span>
+          <span className="inline-flex items-center gap-1.5 font-medium text-foreground min-w-0">
+            <Play className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="truncate">{titleOverride ?? '1-Tap Indian Quick Scenes'}</span>
           </span>
           <Badge variant="mono">OFFLINE READY</Badge>
         </div>
@@ -274,9 +278,9 @@ export const StandaloneMonitorWidget: React.FC<{ monitorId: string }> = ({ monit
   return (
     <Card className="h-full space-y-2">
       <div className="flex items-center justify-between text-[11px] text-foreground-muted">
-        <span className="inline-flex items-center gap-1.5">
-          <TrendingUp className="h-3.5 w-3.5 text-tertiary" />
-          <span>Load Analytics (NVS)</span>
+        <span className="inline-flex items-center gap-1.5 min-w-0">
+          <TrendingUp className="h-3.5 w-3.5 text-tertiary shrink-0" />
+          <span className="truncate">{titleOverride ?? 'Load Analytics (NVS)'}</span>
         </span>
         <span className="font-mono text-foreground tabular-nums">{totalKwh.toFixed(2)} kWh</span>
       </div>

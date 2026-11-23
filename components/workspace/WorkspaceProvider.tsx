@@ -13,27 +13,31 @@ import {
 } from '@/components/theme/triColor';
 import { setGlobalHapticsEnabled } from '@/components/ui/haptics';
 
+import {
+  DEFAULT_LAYOUT_2D,
+  Layout2DGraph,
+  LayoutContainer,
+  LayoutItemSize,
+  LayoutTreeContainerNode,
+  LayoutTreeNode,
+  LayoutTreeWidgetNode,
+  normalizeLayout2D,
+} from '@/lib/layout/tree';
+
 export type BaseTheme = 'obsidian' | 'alabaster' | 'system';
 export type AccentPreset = 'cyan' | 'emerald' | 'amber' | 'steel';
 export type UiDensity = 'comfortable' | 'compact';
 export type WidgetSize = 'compact' | 'standard' | 'wide' | 'tall';
-export type LayoutItemSize = 'S' | 'M' | 'L' | 'Full';
 export type DockPosition = 'left' | 'right' | 'bottom' | 'float';
-
-export interface LayoutContainer {
-  id: string;
-  title: string;
-  kind: 'room' | 'custom';
-  roomId?: string;
-  itemIds: string[];
-}
-
-export interface Layout2DGraph {
-  containers: LayoutContainer[];
-  itemSizes: Record<string, LayoutItemSize>;
-  hiddenItems: string[];
-  deviceRoomOverrides: Record<string, string>;
-}
+export {
+  DEFAULT_LAYOUT_2D,
+  type Layout2DGraph,
+  type LayoutContainer,
+  type LayoutItemSize,
+  type LayoutTreeContainerNode,
+  type LayoutTreeNode,
+  type LayoutTreeWidgetNode,
+};
 
 export interface DockPanelState {
   open: boolean;
@@ -88,56 +92,6 @@ const CRITICAL_ALERT_CODES = new Set<string>([
   'SOS_MANUAL',
 ]);
 
-export const DEFAULT_LAYOUT_2D: Layout2DGraph = {
-  containers: [
-    {
-      id: 'zone_monitors',
-      title: 'Telemetry & Quick Scenes',
-      kind: 'custom',
-      itemIds: ['mon_energy', 'mon_water', 'mon_hub', 'mon_vehicle', 'mon_scenes'],
-    },
-    {
-      id: 'room_living',
-      title: 'Living Room',
-      kind: 'room',
-      roomId: 'room_living',
-      itemIds: ['dd_pwr01_a1b2c3', 'dd_hub01_u7v8w9'],
-    },
-    {
-      id: 'room_bedroom',
-      title: 'Master Bedroom',
-      kind: 'room',
-      roomId: 'room_bedroom',
-      itemIds: ['dd_pwr02_d4e5f6'],
-    },
-    {
-      id: 'room_bath',
-      title: 'Master Bath',
-      kind: 'room',
-      roomId: 'room_bath',
-      itemIds: ['dd_pwr03_g7h8i9'],
-    },
-    {
-      id: 'room_terrace',
-      title: 'Terrace & Tank',
-      kind: 'room',
-      roomId: 'room_terrace',
-      itemIds: ['dd_wat01_j1k2l3'],
-    },
-    {
-      id: 'room_garage',
-      title: 'Garage & Vehicle',
-      kind: 'room',
-      roomId: 'room_garage',
-      itemIds: ['dd_veh01_m4n5p6'],
-    },
-  ],
-  itemSizes: {
-    mon_scenes: 'Full',
-  },
-  hiddenItems: ['mon_faults', 'mon_analytics'],
-  deviceRoomOverrides: {},
-};
 
 export const DEFAULT_HOMES: HomeSummary[] = [
   {
@@ -244,15 +198,7 @@ function loadStoredPreferences(): WorkspacePreferences {
         ...DEFAULT_CUSTOM_PALETTE,
         ...(parsed.customPalette ?? {}),
       },
-      layout2D: parsed.layout2D?.containers?.length
-        ? {
-            ...DEFAULT_LAYOUT_2D,
-            ...parsed.layout2D,
-            itemSizes: { ...DEFAULT_LAYOUT_2D.itemSizes, ...(parsed.layout2D.itemSizes ?? {}) },
-            hiddenItems: parsed.layout2D.hiddenItems ?? DEFAULT_LAYOUT_2D.hiddenItems,
-            deviceRoomOverrides: parsed.layout2D.deviceRoomOverrides ?? {},
-          }
-        : DEFAULT_LAYOUT_2D,
+      layout2D: normalizeLayout2D(parsed.layout2D),
       collapsedSections: { ...DEFAULT_PREFERENCES.collapsedSections, ...(parsed.collapsedSections ?? {}) },
       widgetSizes: { ...DEFAULT_PREFERENCES.widgetSizes, ...(parsed.widgetSizes ?? {}) },
       orderMaps: { ...DEFAULT_PREFERENCES.orderMaps, ...(parsed.orderMaps ?? {}) },

@@ -165,19 +165,19 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
   return (
     <header
       className={cn(
-        'sticky top-0 z-40 w-full border-b hairline-border dd-glass transition-all duration-200',
-        condensed ? 'h-11 shadow-md' : 'h-[52px] md:h-14'
+        'sticky top-0 z-40 w-full bg-[var(--dd-surface-0)]/96 backdrop-blur-md border-b border-border/80 transition-all duration-200',
+        condensed ? 'h-12 shadow-md' : 'h-[54px] md:h-14'
       )}
     >
-      <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between gap-2 px-3 sm:px-5">
+      <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-5">
         {/* LEFT: Back Button (on nested route), Mobile Brand Mark & Home Switcher Dropdown */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
           {isNestedRoute ? (
             <button
               type="button"
               onClick={() => router.back()}
               aria-label="Go back"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-elevated text-foreground-secondary hover:text-foreground transition-colors cursor-pointer"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-elevated text-foreground-secondary hover:text-foreground transition-colors cursor-pointer"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -188,16 +188,16 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
           )}
 
           {/* Home Switcher Dropdown (includes Plan Tier badge & link to /billing) */}
-          <div ref={homeMenuRef} className="relative min-w-0">
+          <div ref={homeMenuRef} className="relative min-w-0 flex-1 max-w-[140px] sm:max-w-[260px]">
             <button
               type="button"
               onClick={() => setHomeMenuOpen((v) => !v)}
               aria-expanded={homeMenuOpen}
               aria-label="Switch active home"
-              className="inline-flex h-8 max-w-[175px] sm:max-w-[240px] items-center gap-1.5 rounded-lg border border-border/70 bg-surface-elevated/80 px-2.5 text-xs font-medium text-foreground hover:border-border-strong transition-colors cursor-pointer"
+              className="inline-flex h-9 w-full min-w-0 items-center gap-1.5 rounded-lg border border-border/70 bg-surface-elevated px-2 sm:px-2.5 text-xs font-medium text-foreground hover:border-border-strong transition-colors cursor-pointer"
             >
               <Home className="h-3.5 w-3.5 text-accent shrink-0" />
-              <span className="truncate">{activeHome.name}</span>
+              <span className="min-w-0 flex-1 truncate text-left">{activeHome.name}</span>
               <ChevronDown className="h-3.5 w-3.5 text-foreground-muted shrink-0" />
             </button>
 
@@ -259,7 +259,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
         </div>
 
         {/* RIGHT: Slim Primary Controls (Connectivity Pill, Command Search, Alert Bell, Quick Tools `...`) */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* 1. Compact 4-Tier Connectivity Status Pill */}
           <StatusPill
             transport={snapshot.activeTransport}
@@ -274,9 +274,9 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
             onClick={onOpenCommandPalette}
             aria-label="Search devices, rooms, and commands (Cmd+K)"
             title="Command Palette (⌘K)"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/70 bg-surface-elevated/80 px-2 sm:px-2.5 text-xs text-foreground-secondary hover:text-foreground hover:border-border-strong transition-colors cursor-pointer"
+            className="shrink-0 inline-flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-lg border border-border/70 bg-surface-elevated px-0 sm:px-2.5 text-xs text-foreground-secondary hover:text-foreground hover:border-border-strong transition-colors cursor-pointer"
           >
-            <Search className="h-3.5 w-3.5 text-accent" />
+            <Search className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-accent shrink-0" />
             <span className="hidden lg:inline text-[11px]">Search</span>
             <kbd className="hidden sm:inline-block rounded border border-border bg-surface px-1 py-0.5 font-mono text-[10px] text-foreground-muted">
               ⌘K
@@ -296,13 +296,13 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
             aria-label={`Alerts and Faults (${unreadAlertsCount})`}
             title="Alerts & Diagnostics"
             className={cn(
-              'relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors cursor-pointer',
+              'shrink-0 relative inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer',
               hasActiveFaultOrCritical
                 ? 'border-danger/70 bg-danger/15 text-danger'
-                : 'border-border/70 bg-surface-elevated/80 text-foreground-secondary hover:text-foreground'
+                : 'border-border/70 bg-surface-elevated text-foreground-secondary hover:text-foreground'
             )}
           >
-            <Bell className="h-3.5 w-3.5" />
+            <Bell className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
             {unreadAlertsCount > 0 && (
               <span
                 className={cn(
@@ -316,7 +316,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
           </button>
 
           {/* 4. Single `...` Quick Tools Dropdown (Customize Layout, 2D/3D View, Theme, Diagnostics, Voice) */}
-          <div ref={quickToolsRef} className="relative">
+          <div ref={quickToolsRef} className="relative shrink-0">
             <button
               type="button"
               onClick={() => setQuickToolsOpen((v) => !v)}
@@ -324,10 +324,10 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
               aria-label="Quick workspace tools"
               title="Quick Tools & Workspace Options"
               className={cn(
-                'inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors cursor-pointer',
+                'inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer',
                 quickToolsOpen || editLayoutMode
                   ? 'border-accent bg-accent-soft text-accent'
-                  : 'border-border/70 bg-surface-elevated/80 text-foreground-secondary hover:text-foreground'
+                  : 'border-border/70 bg-surface-elevated text-foreground-secondary hover:text-foreground'
               )}
             >
               <MoreHorizontal className="h-4 w-4" />

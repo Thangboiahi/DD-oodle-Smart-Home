@@ -55,6 +55,7 @@
 [data-theme="obsidian"] {
   color-scheme: dark;
   --dd-canvas: #090b0f;
+  --dd-surface-0: #10141c;
   --dd-surface: #10141c;
   --dd-surface-elevated: #151b26;
   --dd-surface-muted: #1b2230;
@@ -83,6 +84,7 @@
 [data-theme="alabaster"] {
   color-scheme: light;
   --dd-canvas: #f4f6f9;
+  --dd-surface-0: #ffffff;
   --dd-surface: #ffffff;
   --dd-surface-elevated: #f9fafc;
   --dd-surface-muted: #edf0f5;
@@ -112,6 +114,7 @@
   [data-theme="system"] {
     color-scheme: light;
     --dd-canvas: #f4f6f9;
+    --dd-surface-0: #ffffff;
     --dd-surface: #ffffff;
     --dd-surface-elevated: #f9fafc;
     --dd-surface-muted: #edf0f5;

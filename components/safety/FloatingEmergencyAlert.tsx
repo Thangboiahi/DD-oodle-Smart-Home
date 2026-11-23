@@ -1,18 +1,22 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertOctagon,
   AlertTriangle,
   ArrowRight,
+  ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  GripVertical,
   Lock,
-  Minimize2,
   PhoneCall,
   ShieldAlert,
   Sparkles,
+  Volume2,
+  VolumeX,
   Wrench,
   X,
 } from 'lucide-react';
@@ -52,6 +56,26 @@ interface RecoveryPlaybook {
   };
 }
 
+interface PersistedBeaconPos {
+  edge: 'left' | 'right';
+  yPct: number;
+}
+
+interface SafeRailMetrics {
+  minY: number;
+  maxY: number;
+  bottomNavTop: number;
+  viewportW: number;
+  viewportH: number;
+}
+
+const STORAGE_KEY = 'dd_oodle_alert_beacon_pos_v1';
+const BEACON_HEIGHT = 44;
+const BEACON_WIDTH = 64;
+const POPOVER_EST_HEIGHT = 224;
+const DRAG_THRESHOLD_PX = 6;
+const DEFAULT_POS: PersistedBeaconPos = { edge: 'right', yPct: 0.72 };
+
 const ROOM_LABELS: Record<string, string> = {
   room_living: 'Living Room',
   room_master: 'Master Bedroom',
@@ -59,6 +83,73 @@ const ROOM_LABELS: Record<string, string> = {
   room_terrace: 'Terrace & Overhead Tank',
   room_garage: 'Garage & Hub',
 };
+
+function clamp(val: number, min: number, max: number): number {
+  if (max < min) return min;
+  return Math.min(Math.max(val, min), max);
+}
+
+function readPersistedPos(): PersistedBeaconPos {
+  if (typeof window === 'undefined') return DEFAULT_POS;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_POS;
+    const parsed = JSON.parse(raw) as Partial<PersistedBeaconPos>;
+    const edge: 'left' | 'right' = parsed.edge === 'left' ? 'left' : 'right';
+    const yPct =
+      typeof parsed.yPct === 'number' && Number.isFinite(parsed.yPct)
+        ? clamp(parsed.yPct, 0, 1)
+        : DEFAULT_POS.yPct;
+    return { edge, yPct };
+  } catch {
+    return DEFAULT_POS;
+  }
+}
+
+function savePersistedPos(pos: PersistedBeaconPos): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        edge: pos.edge,
+        yPct: Number(clamp(pos.yPct, 0, 1).toFixed(4)),
+      })
+    );
+  } catch {
+    // Ignore storage quota / private mode failures
+  }
+}
+
+function measureSafeRail(): SafeRailMetrics {
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+
+  const headerEl = document.querySelector('header');
+  const headerBottom = headerEl
+    ? Math.max(0, headerEl.getBoundingClientRect().bottom)
+    : 60;
+
+  const mobileNavEl = document.querySelector('nav[aria-label="Mobile Navigation"]');
+  let bottomNavTop = viewportH;
+  if (mobileNavEl) {
+    const rect = mobileNavEl.getBoundingClientRect();
+    if (rect.height > 0 && rect.top > 0 && rect.top < viewportH) {
+      bottomNavTop = rect.top;
+    }
+  }
+
+  const minY = Math.round(headerBottom) + 8;
+  const maxY = Math.max(minY, Math.round(bottomNavTop) - BEACON_HEIGHT - 8);
+
+  return {
+    minY,
+    maxY,
+    bottomNavTop: Math.round(bottomNavTop),
+    viewportW,
+    viewportH,
+  };
+}
 
 function buildRecoveryPlaybook(inc: ActiveEmergencyIncident): RecoveryPlaybook {
   const isVehicle = inc.moduleCode === 'VEH-01';
@@ -217,12 +308,10 @@ function buildRecoveryPlaybook(inc: ActiveEmergencyIncident): RecoveryPlaybook {
 export const FloatingEmergencyAlert: React.FC = () => {
   const { snapshot } = useWorkspace();
 
-  // Collect all active device faults/alerts + escalated/acknowledged Crash SOS
-  const activeIncidents = useMemo<ActiveEmergencyIncident[]>(() => {
+  // 1. Collect all active device faults/alerts + escalated/acknowledged Crash SOS
+  const allActiveIncidents = useMemo<ActiveEmergencyIncident[]>(() => {
     const list: ActiveEmergencyIncident[] = [];
 
-    // 1. If Crash SOS has already escalated (the 20s countdown modal is finished or acknowledged),
-    // include it in the docked emergency beacon so it remains accessible without painting the app red.
     if (snapshot.activeCrashSos && snapshot.activeCrashSos.status === 'escalated') {
       const veh = snapshot.devices[snapshot.activeCrashSos.device_id];
       list.push({
@@ -242,12 +331,12 @@ export const FloatingEmergencyAlert: React.FC = () => {
       });
     }
 
-    // 2. All device-level latched faults (G10) and active last_alerts (G8 / G11 / G17)
     for (const dev of Object.values(snapshot.devices)) {
       if (dev.last_alert?.cancelled) continue;
       const alertType = dev.state.fault ?? dev.last_alert?.type ?? null;
       if (!alertType) continue;
-      // Avoid duplicating an active countdown crash modal that's currently on screen
+
+      // Avoid duplicating an active countdown crash modal (G13a remains immediate)
       if (
         (alertType === 'CRASH_DETECTED' || alertType === 'SOS_MANUAL') &&
         snapshot.activeCrashSos?.status === 'countdown'
@@ -275,7 +364,7 @@ export const FloatingEmergencyAlert: React.FC = () => {
         value: dev.last_alert?.value,
         limit: dev.last_alert?.limit,
         latched: dev.state.fault !== null,
-        ts: dev.last_alert?.ts ? dev.last_alert.ts * 1000 : (dev.state.ts ? dev.state.ts * 1000 : 0),
+        ts: dev.last_alert?.ts ? dev.last_alert.ts * 1000 : dev.state.ts ? dev.state.ts * 1000 : 0,
         message: dev.last_alert?.message,
       });
     }
@@ -283,18 +372,78 @@ export const FloatingEmergencyAlert: React.FC = () => {
     return list;
   }, [snapshot]);
 
-  const [isDocked, setIsDocked] = useState(false);
+  // Local warning dismissals (NEVER applies to G10 latched faults or escalated Crash SOS)
+  const [dismissedWarnings, setDismissedWarnings] = useState<Record<string, number>>({});
+  const [silencedAlertIds, setSilencedAlertIds] = useState<Record<string, boolean>>({});
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
   const [selectedIncidentIdx, setSelectedIncidentIdx] = useState(0);
-  const [beaconCorner, setBeaconCorner] = useState<'right' | 'left'>('right');
+
+  // Persisted edge-docked position + measured viewport safe rail
+  const [persistedPos, setPersistedPos] = useState<PersistedBeaconPos>(DEFAULT_POS);
+  const [rail, setRail] = useState<SafeRailMetrics | null>(null);
+
+  // Active drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragCoords, setDragCoords] = useState<{ x: number; y: number } | null>(null);
+  const dragSessionRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startBeaconX: number;
+    startBeaconY: number;
+    moved: boolean;
+    rail: SafeRailMetrics;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
+
   const lastSignatureRef = useRef<string>('');
 
+  const activeIncidents = useMemo(() => {
+    return allActiveIncidents.filter((inc) => {
+      if (inc.latched) return true;
+      if (inc.alertType === 'CRASH_DETECTED' || inc.alertType === 'SOS_MANUAL') return true;
+      return dismissedWarnings[inc.id] !== inc.ts;
+    });
+  }, [allActiveIncidents, dismissedWarnings]);
+
   const incidentSignature = useMemo(
-    () => activeIncidents.map((i) => i.id).join('|'),
+    () => activeIncidents.map((i) => `${i.id}@${i.ts}`).join('|'),
     [activeIncidents]
   );
 
-  // Whenever a new alert signature appears, pop the floating card out and start the 5s auto-dock timer
+  // Hydrate persisted position & measure safe vertical rail between header & bottom nav
+  useEffect(() => {
+    const syncLayout = () => {
+      setRail(measureSafeRail());
+    };
+
+    const rafId = window.requestAnimationFrame(() => {
+      setPersistedPos(readPersistedPos());
+      syncLayout();
+    });
+
+    window.addEventListener('resize', syncLayout);
+    window.addEventListener('orientationchange', syncLayout);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', syncLayout);
+      window.removeEventListener('orientationchange', syncLayout);
+    };
+  }, []);
+
+  // Re-measure safe rail whenever incidents become visible (e.g. after route layout settles)
+  useEffect(() => {
+    if (activeIncidents.length === 0) return;
+    const rafId = window.requestAnimationFrame(() => {
+      setRail(measureSafeRail());
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeIncidents.length]);
+
+  // On new alert arrival, briefly open the compact popover and auto-collapse to the edge beacon after 5s
   useEffect(() => {
     if (!incidentSignature) {
       lastSignatureRef.current = '';
@@ -304,231 +453,533 @@ export const FloatingEmergencyAlert: React.FC = () => {
     const isNewAlert = incidentSignature !== lastSignatureRef.current;
     lastSignatureRef.current = incidentSignature;
 
-    let expandTimer: number | undefined;
-    if (isNewAlert) {
-      expandTimer = window.setTimeout(() => {
-        setIsDocked(false);
-        setSelectedIncidentIdx(0);
-      }, 0);
-    }
+    if (!isNewAlert) return;
 
-    const dockTimer = window.setTimeout(() => {
-      setIsDocked(true);
+    const openTimer = window.setTimeout(() => {
+      setSelectedIncidentIdx(0);
+      setPopoverOpen(true);
+    }, 0);
+
+    const autoCollapseTimer = window.setTimeout(() => {
+      setPopoverOpen(false);
     }, 5200);
 
     return () => {
-      if (expandTimer) window.clearTimeout(expandTimer);
-      window.clearTimeout(dockTimer);
+      window.clearTimeout(openTimer);
+      window.clearTimeout(autoCollapseTimer);
     };
   }, [incidentSignature]);
 
-  // Listen for custom event from header bell or elsewhere to open the guided diagnostic sheet
+  // Header bell event opens the full Cause & Guided Recovery diagnostic sheet
   useEffect(() => {
     const onOpenDiagnostics = () => {
-      if (activeIncidents.length > 0) {
+      if (allActiveIncidents.length > 0) {
+        setDismissedWarnings({});
+        setPopoverOpen(false);
         setDiagnosticOpen(true);
       }
     };
     window.addEventListener('ddoodle:open-emergency-sheet', onOpenDiagnostics);
     return () => window.removeEventListener('ddoodle:open-emergency-sheet', onOpenDiagnostics);
-  }, [activeIncidents.length]);
+  }, [allActiveIncidents.length]);
+
+  // Escape key closes inline popover or diagnostic sheet
+  useEffect(() => {
+    if (!popoverOpen && !diagnosticOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (diagnosticOpen) setDiagnosticOpen(false);
+        else if (popoverOpen) setPopoverOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [popoverOpen, diagnosticOpen]);
+
+  // Compute clamped docked pixel coordinates from persisted { edge, yPct }
+  const dockedPosition = useMemo(() => {
+    if (!rail) return null;
+    const span = Math.max(0, rail.maxY - rail.minY);
+    const y = clamp(Math.round(rail.minY + persistedPos.yPct * span), rail.minY, rail.maxY);
+    const x = persistedPos.edge === 'left' ? 0 : Math.max(0, rail.viewportW - BEACON_WIDTH);
+    return { x, y };
+  }, [rail, persistedPos]);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      const currentRail = measureSafeRail();
+      setRail(currentRail);
+
+      const span = Math.max(0, currentRail.maxY - currentRail.minY);
+      const startBeaconY = clamp(
+        Math.round(currentRail.minY + persistedPos.yPct * span),
+        currentRail.minY,
+        currentRail.maxY
+      );
+      const startBeaconX =
+        persistedPos.edge === 'left' ? 0 : Math.max(0, currentRail.viewportW - BEACON_WIDTH);
+
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic events may not support pointer capture
+      }
+
+      dragSessionRef.current = {
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startBeaconX,
+        startBeaconY,
+        moved: false,
+        rail: currentRail,
+        lastX: startBeaconX,
+        lastY: startBeaconY,
+      };
+    },
+    [persistedPos]
+  );
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const session = dragSessionRef.current;
+    if (!session || session.pointerId !== e.pointerId) return;
+
+    const dx = e.clientX - session.startClientX;
+    const dy = e.clientY - session.startClientY;
+
+    if (!session.moved && Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
+      session.moved = true;
+      setIsDragging(true);
+      setPopoverOpen(false);
+    }
+
+    if (session.moved) {
+      const nextX = clamp(
+        Math.round(session.startBeaconX + dx),
+        0,
+        Math.max(0, session.rail.viewportW - BEACON_WIDTH)
+      );
+      const nextY = clamp(
+        Math.round(session.startBeaconY + dy),
+        session.rail.minY,
+        session.rail.maxY
+      );
+      session.lastX = nextX;
+      session.lastY = nextY;
+      setDragCoords({ x: nextX, y: nextY });
+    }
+  }, []);
+
+  const finishPointerInteraction = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>, cancelled = false) => {
+      const session = dragSessionRef.current;
+      if (!session || session.pointerId !== e.pointerId) return;
+      dragSessionRef.current = null;
+
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // Ignore capture release error
+      }
+
+      if (!session.moved) {
+        if (!cancelled) {
+          setPopoverOpen((prev) => !prev);
+        }
+        return;
+      }
+
+      // Snap horizontally to nearest viewport edge and persist { edge, yPct }
+      const centerX = session.lastX + BEACON_WIDTH / 2;
+      const nextEdge: 'left' | 'right' = centerX < session.rail.viewportW / 2 ? 'left' : 'right';
+      const span = Math.max(1, session.rail.maxY - session.rail.minY);
+      const nextYPct = clamp((session.lastY - session.rail.minY) / span, 0, 1);
+      const nextPos: PersistedBeaconPos = { edge: nextEdge, yPct: nextYPct };
+
+      setPersistedPos(nextPos);
+      savePersistedPos(nextPos);
+      setIsDragging(false);
+      setDragCoords(null);
+    },
+    []
+  );
 
   if (activeIncidents.length === 0) {
     return null;
   }
 
-  const activeIncident =
-    activeIncidents[Math.min(selectedIncidentIdx, activeIncidents.length - 1)] ?? activeIncidents[0];
+  const safeIdx = Math.min(selectedIncidentIdx, activeIncidents.length - 1);
+  const activeIncident = activeIncidents[safeIdx] ?? activeIncidents[0];
   const playbook = buildRecoveryPlaybook(activeIncident);
   const hasCritical = activeIncidents.some((i) => i.severity === 'CRITICAL');
+  const isLifeSafetyCrash =
+    activeIncident.alertType === 'CRASH_DETECTED' || activeIncident.alertType === 'SOS_MANUAL';
+  const canDismissActive = !activeIncident.latched && !isLifeSafetyCrash;
+  const isActiveSilenced = Boolean(silencedAlertIds[activeIncident.id]);
+  const allSilenced = activeIncidents.every((i) => Boolean(silencedAlertIds[i.id]));
+  const deviceHref =
+    activeIncident.moduleCode === 'VEH-01'
+      ? '/vehicles'
+      : `/devices/${activeIncident.deviceId}`;
+
+  const beaconX = isDragging && dragCoords ? dragCoords.x : dockedPosition?.x ?? 0;
+  const beaconY = isDragging && dragCoords ? dragCoords.y : dockedPosition?.y ?? 200;
+
+  // Compute viewport-clamped compact popover position anchored right beside the edge beacon
+  const popoverGeometry = (() => {
+    if (!rail || !dockedPosition) return null;
+    const width = Math.min(296, Math.max(224, rail.viewportW - BEACON_WIDTH - 20));
+    const left =
+      persistedPos.edge === 'right'
+        ? Math.max(8, rail.viewportW - BEACON_WIDTH - 10 - width)
+        : Math.min(rail.viewportW - width - 8, BEACON_WIDTH + 10);
+
+    const availBottom = rail.bottomNavTop - 8;
+    let idealTop = dockedPosition.y;
+    if (idealTop + POPOVER_EST_HEIGHT > availBottom) {
+      idealTop = dockedPosition.y + BEACON_HEIGHT - POPOVER_EST_HEIGHT;
+    }
+    const top = clamp(
+      Math.round(idealTop),
+      rail.minY,
+      Math.max(rail.minY, availBottom - POPOVER_EST_HEIGHT)
+    );
+    return { left: Math.round(left), top, width: Math.round(width) };
+  })();
+
+  const cycleIncident = (delta: number) => {
+    if (activeIncidents.length <= 1) return;
+    setSelectedIncidentIdx(
+      (prev) => (prev + delta + activeIncidents.length) % activeIncidents.length
+    );
+  };
+
+  const toggleSilenceActive = () => {
+    setSilencedAlertIds((prev) => ({
+      ...prev,
+      [activeIncident.id]: !prev[activeIncident.id],
+    }));
+  };
+
+  const dismissActiveWarning = () => {
+    if (!canDismissActive) return;
+    setDismissedWarnings((prev) => ({
+      ...prev,
+      [activeIncident.id]: activeIncident.ts,
+    }));
+    if (activeIncidents.length <= 1) {
+      setPopoverOpen(false);
+    } else {
+      setSelectedIncidentIdx(0);
+    }
+  };
 
   return (
     <>
-      {/* 1. Floating Alert Popup (Auto-docks into corner beacon after ~5s or on Minimize) */}
-      <AnimatePresence mode="wait">
-        {!isDocked && !diagnosticOpen && (
+      {/* Transparent tap-outside backdrop while compact quick-actions popover is open */}
+      {popoverOpen && !diagnosticOpen && !isDragging && (
+        <div
+          aria-hidden="true"
+          onClick={() => setPopoverOpen(false)}
+          className="fixed inset-0 z-40"
+        />
+      )}
+
+      {/* 1. Compact Vertical-Draggable Edge-Docked Emergency Beacon (~44px tall) */}
+      {rail && dockedPosition && !diagnosticOpen && (
+        <button
+          type="button"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={(e) => finishPointerInteraction(e, false)}
+          onPointerCancel={(e) => finishPointerInteraction(e, true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setPopoverOpen((prev) => !prev);
+            }
+          }}
+          aria-label={`Emergency alert beacon (${activeIncidents.length} active ${
+            activeIncidents.length === 1 ? 'alert' : 'alerts'
+          }). Tap for quick actions or drag vertically to reposition.`}
+          aria-expanded={popoverOpen}
+          aria-haspopup="dialog"
+          style={{
+            left: `${beaconX}px`,
+            top: `${beaconY}px`,
+            width: `${BEACON_WIDTH}px`,
+            height: `${BEACON_HEIGHT}px`,
+          }}
+          className={cn(
+            'fixed z-50 flex items-center justify-center gap-1 touch-none select-none cursor-grab active:cursor-grabbing',
+            'bg-[var(--dd-surface-0)]/96 backdrop-blur-xl shadow-2xl border',
+            isDragging
+              ? 'rounded-full scale-105 shadow-2xl transition-none'
+              : cn(
+                  'transition-[left,top,border-radius,transform] duration-200 ease-out',
+                  persistedPos.edge === 'right'
+                    ? 'rounded-l-full rounded-r-none border-r-0 pl-2 pr-1.5'
+                    : 'rounded-r-full rounded-l-none border-l-0 pl-1.5 pr-2'
+                ),
+            hasCritical
+              ? 'border-danger/85 ring-1 ring-danger/35'
+              : 'border-warning/85 ring-1 ring-warning/30'
+          )}
+        >
+          {/* Subtle Pulsating Outer Ring (paused visually when all alerts are silenced or while dragging) */}
+          {!allSilenced && !isDragging && (
+            <span
+              aria-hidden="true"
+              className={cn(
+                'pointer-events-none absolute -inset-[2px] animate-beacon-ring border-2',
+                persistedPos.edge === 'right'
+                  ? 'rounded-l-full rounded-r-none border-r-0'
+                  : 'rounded-r-full rounded-l-none border-l-0',
+                hasCritical ? 'border-danger/60' : 'border-warning/60'
+              )}
+            />
+          )}
+
+          {/* Drag Grip Handle on the edge-facing side */}
+          {persistedPos.edge === 'left' && !isDragging && (
+            <GripVertical className="h-3.5 w-3.5 shrink-0 text-foreground-muted/70" />
+          )}
+
+          {/* Severity Icon + Unread Count Badge */}
+          <span className="relative inline-flex items-center justify-center">
+            <span
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-full shadow-sm',
+                hasCritical
+                  ? 'bg-danger text-white'
+                  : 'bg-warning text-slate-950'
+              )}
+            >
+              {hasCritical ? (
+                <ShieldAlert className="h-4 w-4" />
+              ) : (
+                <AlertTriangle className="h-4 w-4" />
+              )}
+            </span>
+
+            <span
+              className={cn(
+                'absolute -top-1.5 -right-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-mono font-bold leading-none ring-2 ring-[var(--dd-surface-0)]',
+                hasCritical
+                  ? 'bg-danger text-white'
+                  : 'bg-warning text-slate-950'
+              )}
+            >
+              {activeIncidents.length}
+            </span>
+
+            {allSilenced && (
+              <span
+                title="Alert tone silenced"
+                className="absolute -bottom-1 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-surface-elevated border border-border text-foreground-muted"
+              >
+                <VolumeX className="h-2.5 w-2.5" />
+              </span>
+            )}
+          </span>
+
+          {persistedPos.edge === 'right' && !isDragging && (
+            <GripVertical className="h-3.5 w-3.5 shrink-0 text-foreground-muted/70" />
+          )}
+        </button>
+      )}
+
+      {/* 2. Compact Inline Quick-Actions Popover (Auto-flipped inside viewport) */}
+      <AnimatePresence>
+        {popoverOpen && !diagnosticOpen && !isDragging && popoverGeometry && (
           <motion.aside
-            key="floating-alert-popup"
-            layoutId="dd-emergency-floating-vessel"
-            initial={{ opacity: 0, y: -18, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.88, transition: { duration: 0.18 } }}
-            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-            role="alert"
-            aria-live="assertive"
+            key="compact-alert-popover"
+            role="dialog"
+            aria-label={`Alert quick actions: ${activeIncident.alertType}`}
+            initial={{
+              opacity: 0,
+              scale: 0.94,
+              x: persistedPos.edge === 'right' ? 10 : -10,
+            }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{
+              opacity: 0,
+              scale: 0.94,
+              x: persistedPos.edge === 'right' ? 10 : -10,
+              transition: { duration: 0.14 },
+            }}
+            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+            style={{
+              left: `${popoverGeometry.left}px`,
+              top: `${popoverGeometry.top}px`,
+              width: `${popoverGeometry.width}px`,
+            }}
             className={cn(
-              'fixed z-50 top-16 right-3 left-3 sm:left-auto sm:right-5 sm:w-[356px] max-w-[360px] mx-auto sm:mx-0',
-              'rounded-2xl border bg-surface/95 backdrop-blur-xl shadow-2xl p-3.5',
-              hasCritical
-                ? 'border-danger/80 ring-1 ring-danger/30'
-                : 'border-warning/80 ring-1 ring-warning/25'
+              'fixed z-50 rounded-2xl border bg-[var(--dd-surface-0)]/98 backdrop-blur-xl shadow-2xl p-3 space-y-2.5',
+              activeIncident.severity === 'CRITICAL'
+                ? 'border-danger/75 ring-1 ring-danger/25'
+                : 'border-warning/75 ring-1 ring-warning/25'
             )}
           >
-            <div className="flex items-start justify-between gap-2.5">
-              <button
-                type="button"
-                onClick={() => setDiagnosticOpen(true)}
-                className="flex items-start gap-2.5 text-left min-w-0 flex-1 group cursor-pointer"
-              >
-                <div
+            {/* Row 1: Alert Title + < 1/N > Switcher + Close */}
+            <div className="flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
                   className={cn(
-                    'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border',
-                    hasCritical
-                      ? 'border-danger/50 bg-danger/15 text-danger'
-                      : 'border-warning/50 bg-warning/15 text-warning'
+                    'inline-flex h-2 w-2 shrink-0 rounded-full',
+                    activeIncident.severity === 'CRITICAL' ? 'bg-danger' : 'bg-warning'
+                  )}
+                />
+                <span
+                  className={cn(
+                    'text-[11px] font-mono font-bold uppercase tracking-tight truncate',
+                    activeIncident.severity === 'CRITICAL' ? 'text-danger' : 'text-warning'
                   )}
                 >
-                  <span
-                    className={cn(
-                      'absolute inset-0 rounded-xl animate-beacon-ring',
-                      hasCritical ? 'bg-danger/35' : 'bg-warning/35'
-                    )}
-                  />
-                  <AlertTriangle className="h-4 w-4 relative z-10" />
-                </div>
+                  {activeIncident.alertType}
+                </span>
+              </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span
-                      className={cn(
-                        'text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded',
-                        hasCritical
-                          ? 'bg-danger/20 text-danger'
-                          : 'bg-warning/20 text-warning'
-                      )}
+              <div className="flex items-center gap-1 shrink-0">
+                {activeIncidents.length > 1 && (
+                  <div className="inline-flex items-center rounded-lg border border-border/80 bg-surface-elevated/80 px-0.5 h-6">
+                    <button
+                      type="button"
+                      onClick={() => cycleIncident(-1)}
+                      aria-label="Previous active alert"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded text-foreground-muted hover:text-foreground cursor-pointer"
                     >
-                      {activeIncident.alertType}
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="px-1 text-[10px] font-mono font-semibold text-foreground tabular-nums">
+                      {safeIdx + 1}/{activeIncidents.length}
                     </span>
-                    <span className="text-[10px] font-mono text-foreground-muted">
-                      {activeIncident.moduleCode}
-                    </span>
-                    {activeIncidents.length > 1 && (
-                      <span className="text-[10px] font-mono text-accent font-semibold">
-                        +{activeIncidents.length - 1} more
-                      </span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => cycleIncident(1)}
+                      aria-label="Next active alert"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded text-foreground-muted hover:text-foreground cursor-pointer"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
                   </div>
+                )}
 
-                  <p className="mt-1 text-xs font-semibold text-foreground truncate group-hover:text-accent transition-colors">
-                    {activeIncident.deviceName} · {activeIncident.roomName}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-foreground-secondary line-clamp-2">
-                    {playbook.headline}
-                  </p>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsDocked(true)}
-                aria-label="Minimize alert to corner beacon"
-                title="Minimize to Corner Beacon"
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-surface-elevated text-foreground-muted hover:text-foreground cursor-pointer"
-              >
-                <Minimize2 className="h-3.5 w-3.5" />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setPopoverOpen(false)}
+                  aria-label="Close alert popover"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-border/70 bg-surface-elevated/80 text-foreground-muted hover:text-foreground cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
-            <div className="mt-2.5 pt-2 border-t border-border/50 flex items-center justify-between gap-2">
+            {/* Row 2: Offending Device Name & Concise Summary */}
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-foreground truncate">
+                  {activeIncident.deviceName}
+                </span>
+                <span className="text-[10px] font-mono text-foreground-muted shrink-0">
+                  {activeIncident.moduleCode}
+                </span>
+              </div>
+              <p className="text-[11px] text-foreground-secondary leading-snug line-clamp-2">
+                {playbook.headline}
+              </p>
+            </div>
+
+            {/* Row 3: G10 Hardware Lock Badge (NEVER remote clear) OR Non-Latched Silence / Dismiss */}
+            {activeIncident.latched ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-danger/45 bg-danger/10 px-2 py-1.5 text-[10px] font-medium text-danger">
+                <span className="inline-flex items-center gap-1.5 min-w-0">
+                  <Lock className="h-3 w-3 shrink-0" />
+                  <span className="truncate font-semibold">3s Physical Reset Required</span>
+                </span>
+                <span className="font-mono text-[9px] uppercase tracking-wider shrink-0 opacity-85">
+                  G10 Lock
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleSilenceActive}
+                  className={cn(
+                    'flex-1 inline-flex h-7 items-center justify-center gap-1 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer',
+                    isActiveSilenced
+                      ? 'border-accent/50 bg-accent-soft text-accent'
+                      : 'border-border/80 bg-surface-elevated/80 text-foreground-secondary hover:text-foreground'
+                  )}
+                >
+                  {isActiveSilenced ? (
+                    <>
+                      <Volume2 className="h-3 w-3" />
+                      <span>Silenced</span>
+                    </>
+                  ) : (
+                    <>
+                      <VolumeX className="h-3 w-3" />
+                      <span>Silence</span>
+                    </>
+                  )}
+                </button>
+
+                {canDismissActive ? (
+                  <button
+                    type="button"
+                    onClick={dismissActiveWarning}
+                    className="flex-1 inline-flex h-7 items-center justify-center gap-1 rounded-lg border border-border/80 bg-surface-elevated/80 text-[11px] font-medium text-foreground-secondary hover:text-foreground cursor-pointer"
+                  >
+                    <X className="h-3 w-3" />
+                    <span>Dismiss</span>
+                  </button>
+                ) : (
+                  <Link
+                    href="tel:112"
+                    onClick={() => setPopoverOpen(false)}
+                    className="flex-1 inline-flex h-7 items-center justify-center gap-1 rounded-lg border border-danger/60 bg-danger/15 text-[11px] font-semibold text-danger hover:bg-danger/25"
+                  >
+                    <PhoneCall className="h-3 w-3" />
+                    <span>Call 112</span>
+                  </Link>
+                )}
+              </div>
+            )}
+
+            {/* Row 4: 1-Tap Quick Actions — Cause & Fix + Go to Device */}
+            <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-border/60">
               <button
                 type="button"
-                onClick={() => setDiagnosticOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline cursor-pointer"
+                onClick={() => {
+                  setPopoverOpen(false);
+                  setDiagnosticOpen(true);
+                }}
+                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-accent px-2.5 text-[11px] font-semibold text-[var(--dd-accent-fg)] hover:opacity-95 transition-opacity cursor-pointer"
               >
-                <Sparkles className="h-3 w-3" />
-                <span>Cause &amp; Guided Recovery Steps</span>
-                <ChevronRight className="h-3 w-3" />
+                <Sparkles className="h-3 w-3 shrink-0" />
+                <span className="truncate">Cause &amp; Fix</span>
               </button>
 
-              <span className="text-[10px] font-mono text-foreground-muted">
-                Auto-docks in 5s
-              </span>
+              <Link
+                href={deviceHref}
+                onClick={() => setPopoverOpen(false)}
+                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-surface-elevated px-2.5 text-[11px] font-medium text-foreground hover:border-border-strong transition-colors"
+              >
+                <span className="truncate">Go to Device</span>
+                <ExternalLink className="h-3 w-3 shrink-0 text-foreground-muted" />
+              </Link>
             </div>
           </motion.aside>
         )}
-
-        {/* 2. Docked Pulsating Corner Emergency Beacon */}
-        {isDocked && !diagnosticOpen && (
-          <motion.div
-            key="docked-alert-beacon"
-            layoutId="dd-emergency-floating-vessel"
-            initial={{ opacity: 0, scale: 0.75 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.75 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-            className={cn(
-              'fixed z-50 bottom-20 md:bottom-6',
-              beaconCorner === 'right' ? 'right-3.5 md:right-6' : 'left-3.5 md:left-6'
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setDiagnosticOpen(true)}
-                aria-label={`Open emergency diagnostics (${activeIncidents.length} active alerts)`}
-                className={cn(
-                  'group relative flex items-center gap-2 rounded-full border px-3 py-2 shadow-xl backdrop-blur-xl transition-transform active:scale-95 cursor-pointer',
-                  hasCritical
-                    ? 'border-danger bg-surface/95 text-foreground ring-2 ring-danger/30'
-                    : 'border-warning bg-surface/95 text-foreground ring-2 ring-warning/30'
-                )}
-              >
-                {/* Pulsating Outer Ring */}
-                <span
-                  className={cn(
-                    'absolute -inset-1 rounded-full animate-beacon-ring pointer-events-none',
-                    hasCritical ? 'border-2 border-danger/60' : 'border-2 border-warning/60'
-                  )}
-                />
-
-                <span
-                  className={cn(
-                    'relative flex h-6 w-6 items-center justify-center rounded-full text-white',
-                    hasCritical ? 'bg-danger' : 'bg-warning text-slate-950'
-                  )}
-                >
-                  <ShieldAlert className="h-3.5 w-3.5" />
-                </span>
-
-                <div className="text-left pr-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-mono font-bold tracking-tight">
-                      {activeIncident.alertType}
-                    </span>
-                    <span
-                      className={cn(
-                        'inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-mono font-bold',
-                        hasCritical
-                          ? 'bg-danger/20 text-danger'
-                          : 'bg-warning/20 text-warning'
-                      )}
-                    >
-                      {activeIncidents.length}
-                    </span>
-                  </div>
-                  <span className="block text-[9px] text-foreground-muted leading-none">
-                    Tap for cause &amp; fix
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setBeaconCorner((prev) => (prev === 'right' ? 'left' : 'right'))
-                }
-                title="Snap beacon to opposite corner"
-                aria-label="Snap beacon to opposite corner"
-                className="h-7 w-7 rounded-full border border-border/70 bg-surface/90 text-[10px] font-mono text-foreground-muted hover:text-foreground flex items-center justify-center shadow cursor-pointer"
-              >
-                ⇄
-              </button>
-            </div>
-          </motion.div>
-        )}
       </AnimatePresence>
 
-      {/* 3. Cause & Guided Solutions Diagnostic Modal / Bottom Sheet */}
+      {/* 3. Full Cause & Guided Solutions Diagnostic Modal / Bottom Sheet */}
       <AnimatePresence>
         {diagnosticOpen && (
           <div
@@ -584,10 +1035,7 @@ export const FloatingEmergencyAlert: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setDiagnosticOpen(false);
-                    setIsDocked(true);
-                  }}
+                  onClick={() => setDiagnosticOpen(false)}
                   aria-label="Close diagnostic sheet"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-elevated text-foreground-secondary hover:text-foreground cursor-pointer"
                 >
@@ -605,7 +1053,7 @@ export const FloatingEmergencyAlert: React.FC = () => {
                       onClick={() => setSelectedIncidentIdx(idx)}
                       className={cn(
                         'snap-start shrink-0 rounded-lg border px-2.5 py-1.5 text-[11px] font-mono transition-colors cursor-pointer',
-                        idx === selectedIncidentIdx
+                        idx === safeIdx
                           ? 'border-accent bg-accent-soft text-accent font-semibold'
                           : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground'
                       )}
@@ -721,22 +1169,16 @@ export const FloatingEmergencyAlert: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    setDiagnosticOpen(false);
-                    setIsDocked(true);
-                  }}
+                  onClick={() => setDiagnosticOpen(false)}
                 >
-                  Dock to Corner Beacon
+                  Minimize to Edge Beacon
                 </Button>
 
                 <div className="flex flex-wrap items-center gap-2">
                   {playbook.secondaryAction && (
                     <Link
                       href={playbook.secondaryAction.href}
-                      onClick={() => {
-                        setDiagnosticOpen(false);
-                        setIsDocked(true);
-                      }}
+                      onClick={() => setDiagnosticOpen(false)}
                       className={cn(
                         'inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors',
                         playbook.secondaryAction.isEmergencyCall
@@ -753,10 +1195,7 @@ export const FloatingEmergencyAlert: React.FC = () => {
 
                   <Link
                     href={playbook.primaryActionHref}
-                    onClick={() => {
-                      setDiagnosticOpen(false);
-                      setIsDocked(true);
-                    }}
+                    onClick={() => setDiagnosticOpen(false)}
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-accent px-3.5 text-xs font-semibold text-[var(--dd-accent-fg)] hover:opacity-95 transition-opacity"
                   >
                     <span>{playbook.primaryActionLabel}</span>

@@ -1,26 +1,29 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  Battery,
   Car,
+  Check,
   ChevronDown,
-  ChevronUp,
+  Eye,
   Gauge,
+  Layers,
   Lock,
   MapPin,
-  MoreHorizontal,
-  Navigation,
   Phone,
   Plus,
+  RotateCcw,
   Route,
   Shield,
+  ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   Unlock,
 } from 'lucide-react';
 import {
+  VehicleGeofence,
   VehicleTelemetryPayload,
   evaluateStarterInterlockSafety,
 } from '@/lib/protocol/contract';
@@ -32,7 +35,6 @@ import {
   Banner,
   Button,
   Card,
-  Dropdown,
   OtpPinInput,
   PrecisionSlider,
   SegmentedControl,
@@ -85,7 +87,7 @@ const DEMO_TRIPS: TripRecord[] = [
   },
 ];
 
-type SheetDetent = 'peek' | 'half' | 'expanded';
+type SheetDetent = 'peek' | 'half' | 'full';
 
 export interface VehicleSafetyWorkspaceProps {
   initialDeviceId?: string;
@@ -107,15 +109,44 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   );
   const [inspectorTab, setInspectorTab] = useState<'hud' | 'trips' | 'geofences' | 'sos'>('hud');
   const [sheetDetent, setSheetDetent] = useState<SheetDetent>('half');
-  const [testMenuOpen, setTestMenuOpen] = useState(false);
+
+  // Consolidated Map Controls & Simulator Dropdown state
+  const [vehicleMenuOpen, setVehicleMenuOpen] = useState(false);
+  const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
+  const [followVehicle, setFollowVehicle] = useState(true);
+  const [showGeofences, setShowGeofences] = useState(true);
+  const [showDesktopHud, setShowDesktopHud] = useState(false);
+  const [recenterSignal, setRecenterSignal] = useState(0);
+
+  const vehicleMenuRef = useRef<HTMLDivElement>(null);
+  const controlsMenuRef = useRef<HTMLDivElement>(null);
+
   const [pin, setPin] = useState('');
   const [tripProgressPct, setTripProgressPct] = useState(100);
   const [selectedTripId, setSelectedTripId] = useState(DEMO_TRIPS[0].trip_id);
 
-  // Geofences state
-  const [geofences, setGeofences] = useState([
-    { id: 'geo_home', name: 'Imphal Residence', radiusM: 350, carToHome: true },
-    { id: 'geo_office', name: 'City Center', radiusM: 500, carToHome: false },
+  // Geofences synced directly with MapLibre GeoJSON layer
+  const [geofences, setGeofences] = useState<VehicleGeofence[]>([
+    {
+      id: 'geo_home',
+      name: 'Imphal Residence',
+      enabled: true,
+      lat: 24.817,
+      lng: 93.9368,
+      radius_m: 350,
+      trigger: 'both',
+      cross_category_action: 'inverter_saver',
+    },
+    {
+      id: 'geo_office',
+      name: 'City Center',
+      enabled: true,
+      lat: 24.821,
+      lng: 93.942,
+      radius_m: 500,
+      trigger: 'on_enter',
+      cross_category_action: 'none',
+    },
   ]);
   const [newGeoName, setNewGeoName] = useState('');
   const [newGeoRadius, setNewGeoRadius] = useState(300);
@@ -126,6 +157,19 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
     () => vehicle?.config.sos?.contacts ?? ['+919862011114', '+919862022282']
   );
   const [newContact, setNewContact] = useState('+91');
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      if (vehicleMenuRef.current && !vehicleMenuRef.current.contains(e.target as Node)) {
+        setVehicleMenuOpen(false);
+      }
+      if (controlsMenuRef.current && !controlsMenuRef.current.contains(e.target as Node)) {
+        setControlsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
 
   if (!vehicle) {
     return (
@@ -138,6 +182,7 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   const tel = vehicle.telemetry as VehicleTelemetryPayload;
   const safety = evaluateStarterInterlockSafety(tel.speed_kmh, tel.ignition);
   const isOwner = prefs.userRole === 'OWNER';
+  const isLightTheme = prefs.theme === 'alabaster';
   const immobilizeState = vehicle.state.immobilize ?? 'RELEASED';
   const isEngagedOrPending = immobilizeState === 'ENGAGED' || immobilizeState === 'PENDING';
   const cadenceLabel = tel.speed_kmh >= 5 || tel.ignition ? '10s Moving' : '60s Parked';
@@ -213,10 +258,19 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
     if (!newGeoName.trim()) return;
     setGeofences((prev) => [
       ...prev,
-      { id: `geo_${Date.now()}`, name: newGeoName.trim(), radiusM: newGeoRadius, carToHome: true },
+      {
+        id: `geo_${Date.now()}`,
+        name: newGeoName.trim(),
+        enabled: true,
+        lat: Number(tel.lat.toFixed(4)),
+        lng: Number(tel.lng.toFixed(4)),
+        radius_m: newGeoRadius,
+        trigger: 'both',
+        cross_category_action: 'porch_lights',
+      },
     ]);
     setNewGeoName('');
-    pushToast({ title: 'Geofence Zone Created', tone: 'success' });
+    pushToast({ title: 'Geofence Zone Created at Current GPS', tone: 'success' });
   };
 
   const selectedTrip = DEMO_TRIPS.find((t) => t.trip_id === selectedTripId) ?? DEMO_TRIPS[0];
@@ -226,11 +280,176 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   );
   const currentWaypoint = selectedTrip.waypoints[waypointIdx];
 
-  const cycleDetent = () => {
-    setSheetDetent((cur) =>
-      cur === 'peek' ? 'half' : cur === 'half' ? 'expanded' : 'peek'
-    );
-  };
+  // Consolidated ONE compact map top bar (shared cleanly across mobile & desktop)
+  const unifiedMapTopBar = (
+    <div className="absolute top-2.5 inset-x-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
+      {/* Left: Vehicle Selector + Compact Speed/Ignition Status Pill */}
+      <div className="pointer-events-auto flex items-center gap-1.5 min-w-0 flex-1">
+        <div ref={vehicleMenuRef} className="relative min-w-0 max-w-[140px] sm:max-w-[200px]">
+          <button
+            type="button"
+            onClick={() => setVehicleMenuOpen((o) => !o)}
+            aria-expanded={vehicleMenuOpen}
+            aria-label="Select vehicle"
+            className="inline-flex h-8 w-full min-w-0 items-center gap-1.5 rounded-full border border-border/80 bg-[var(--dd-surface-0)]/95 backdrop-blur-md px-2.5 text-xs font-semibold text-foreground shadow-lg cursor-pointer"
+          >
+            <Car className="h-3.5 w-3.5 text-accent shrink-0" />
+            <span className="truncate flex-1 text-left">{vehicle.name}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-foreground-muted shrink-0" />
+          </button>
+
+          {vehicleMenuOpen && (
+            <div className="absolute left-0 top-full mt-1.5 w-52 rounded-xl border border-border bg-surface shadow-2xl p-1.5 z-40 space-y-1 text-xs">
+              {vehicles.map((v) => (
+                <button
+                  key={v.device_id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(v.device_id);
+                    setVehicleMenuOpen(false);
+                  }}
+                  className={cn(
+                    'w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer',
+                    v.device_id === vehicle.device_id
+                      ? 'bg-accent-soft text-accent font-semibold'
+                      : 'text-foreground hover:bg-surface-elevated'
+                  )}
+                >
+                  <span className="truncate">{v.name}</span>
+                  <Badge variant="neutral" className="text-[9px] shrink-0">
+                    {v.state.immobilize ?? 'RELEASED'}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/80 bg-[var(--dd-surface-0)]/95 backdrop-blur-md px-2.5 text-[11px] font-mono tabular-nums text-foreground shadow-lg whitespace-nowrap">
+          <span
+            className={cn(
+              'h-2 w-2 rounded-full shrink-0',
+              tel.ignition ? 'bg-success animate-pulse' : 'bg-foreground-muted'
+            )}
+          />
+          <span>
+            {tel.speed_kmh.toFixed(0)} km/h · {tel.ignition ? 'ON' : 'OFF'}
+          </span>
+        </div>
+      </div>
+
+      {/* Right: Single [Controls / Sim ▾] Dropdown */}
+      <div ref={controlsMenuRef} className="pointer-events-auto relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setControlsMenuOpen((o) => !o)}
+          aria-expanded={controlsMenuOpen}
+          aria-label="Map controls and simulator"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/80 bg-[var(--dd-surface-0)]/95 backdrop-blur-md px-2.5 text-[11px] font-medium text-foreground shadow-lg hover:border-border-strong transition-colors cursor-pointer whitespace-nowrap"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5 text-accent shrink-0" />
+          <span className="hidden min-[380px]:inline">Controls</span>
+          <ChevronDown className="h-3 w-3 text-foreground-muted shrink-0" />
+        </button>
+
+        {controlsMenuOpen && (
+          <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-border bg-surface shadow-2xl p-1.5 z-40 space-y-0.5 text-xs">
+            <div className="px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-foreground-muted">
+              Map Controls
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setFollowVehicle((v) => !v)}
+              className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Eye className="h-3.5 w-3.5 text-accent" />
+                <span>Follow Car</span>
+              </span>
+              {followVehicle && <Check className="h-3.5 w-3.5 text-success" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowGeofences((v) => !v)}
+              className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Layers className="h-3.5 w-3.5 text-accent" />
+                <span>Geofences Layer</span>
+              </span>
+              {showGeofences && <Check className="h-3.5 w-3.5 text-success" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setRecenterSignal((n) => n + 1);
+                setControlsMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-accent" />
+              <span>Recenter Map</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowDesktopHud((v) => !v)}
+              className="hidden lg:flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Gauge className="h-3.5 w-3.5 text-accent" />
+                <span>Map HUD Overlay</span>
+              </span>
+              {showDesktopHud && <Check className="h-3.5 w-3.5 text-success" />}
+            </button>
+
+            <div className="my-1 border-t border-border/60 pt-1 px-2.5 text-[10px] font-mono uppercase tracking-wider text-foreground-muted">
+              Safety Simulator (v1.4)
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                simulatorEngine.triggerVehicleCrash();
+                setControlsMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-danger font-semibold hover:bg-danger/10 cursor-pointer"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+              <span>Simulate 6.4G Crash</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                simulatorEngine.triggerVehicleFaultAlert('SOS_MANUAL');
+                setControlsMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated cursor-pointer"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0" />
+              <span>SOS Sim (Manual Panic)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                simulatorEngine.triggerVehicleFaultAlert('EXT_POWER_LOST');
+                setControlsMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-warning hover:bg-surface-elevated cursor-pointer"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>Simulate 12V Battery Cut</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const inspectorContent = (
     <div className="space-y-3">
@@ -274,9 +493,9 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
             </div>
           </div>
 
-          <div className="rounded-xl border hairline-border bg-surface-elevated/50 px-3 py-2 flex items-center justify-between text-xs font-mono tabular-nums">
-            <span className="text-foreground-muted">GPS FIX ({cadenceLabel})</span>
-            <span className="text-foreground font-semibold">
+          <div className="rounded-xl border hairline-border bg-surface-elevated/50 px-3 py-2 flex items-center justify-between gap-2 text-xs font-mono tabular-nums">
+            <span className="text-foreground-muted truncate">GPS FIX ({cadenceLabel})</span>
+            <span className="text-foreground font-semibold shrink-0">
               {tel.lat.toFixed(4)}°N, {tel.lng.toFixed(4)}°E
             </span>
           </div>
@@ -335,10 +554,10 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
                 key={g.id}
                 className="flex items-center justify-between rounded-xl border hairline-border bg-surface-elevated/60 px-3 py-2"
               >
-                <div>
-                  <div className="font-medium text-foreground">{g.name}</div>
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground truncate">{g.name}</div>
                   <div className="text-[10px] font-mono text-foreground-muted tabular-nums">
-                    Radius: {g.radiusM} m {g.carToHome ? '· Car-to-Home Linked' : ''}
+                    Radius: {g.radius_m} m {g.cross_category_action !== 'none' ? '· Car-to-Home Linked' : ''}
                   </div>
                 </div>
                 <Button
@@ -502,177 +721,100 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
     <div className="relative">
       {/* Desktop / Large Screen Layout: Clean Map + Side Panel */}
       <div className="hidden lg:grid lg:grid-cols-12 gap-3 items-start">
-        <div className="lg:col-span-8 relative rounded-2xl border hairline-border overflow-hidden min-h-[580px] bg-surface">
-          {/* Minimal Floating Top Pill on Map */}
-          <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between gap-2 pointer-events-none">
-            <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border hairline-border bg-surface/90 backdrop-blur-md px-2.5 py-1.5 shadow-lg">
-              <Dropdown
-                ariaLabel="Select vehicle"
-                value={vehicle.device_id}
-                onChange={setSelectedId}
-                triggerClassName="h-7 min-h-0 px-2 text-xs"
-                options={vehicles.map((v) => ({
-                  value: v.device_id,
-                  label: v.name,
-                  badge: v.state.immobilize ?? 'RELEASED',
-                  icon: <Car className="h-3.5 w-3.5" />,
-                }))}
-              />
-              <Badge variant={tel.ignition ? 'warning' : 'neutral'} dot>
-                {tel.ignition ? `${tel.speed_kmh.toFixed(0)} km/h` : 'PARKED'}
-              </Badge>
-              <Badge variant="mono">
-                <Battery className="h-3 w-3" />
-                <span>{tel.bat_pct}%</span>
-              </Badge>
-            </div>
-
-            <div className="pointer-events-auto flex items-center gap-1.5 rounded-2xl border hairline-border bg-surface/90 backdrop-blur-md px-2 py-1 shadow-lg">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => simulatorEngine.triggerVehicleCrash()}
-              >
-                <AlertTriangle className="h-3.5 w-3.5" />
-                <span>Test 20s Crash SOS</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => simulatorEngine.triggerVehicleFaultAlert('EXT_POWER_LOST')}
-              >
-                <span>Test 12V Cut</span>
-              </Button>
-            </div>
-          </div>
+        <div className="lg:col-span-8 relative rounded-2xl border hairline-border overflow-hidden h-[600px] bg-surface">
+          {unifiedMapTopBar}
 
           <ErrorBoundary>
             <VehicleLiveMap
               vehicleDevice={vehicle}
-              onTriggerCrashSos={() => simulatorEngine.triggerVehicleCrash()}
-              onCommandImmobilize={(engage) =>
-                simulatorEngine.sendCommand(vehicle.device_id, { immobilize: engage }, 'pwa_cloud')
-              }
+              followVehicle={followVehicle}
+              showGeofences={showGeofences}
+              recenterSignal={recenterSignal}
+              isLightTheme={isLightTheme}
+              showDesktopHud={showDesktopHud}
+              geofences={geofences}
             />
           </ErrorBoundary>
         </div>
 
         <div className="lg:col-span-4 rounded-2xl border hairline-border bg-surface/85 p-3.5 space-y-3">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b hairline-border">
+            <span className="text-xs font-semibold text-foreground truncate">{vehicle.name}</span>
+            <Badge
+              variant={
+                immobilizeState === 'ENGAGED'
+                  ? 'danger'
+                  : immobilizeState === 'PENDING'
+                  ? 'warning'
+                  : 'success'
+              }
+              dot
+            >
+              {immobilizeState}
+            </Badge>
+          </div>
           {inspectorContent}
         </div>
       </div>
 
-      {/* Mobile & Tablet Layout: Full-Bleed MapLibre Canvas + Multi-Detent Collapsible Bottom Sheet (Peek -> Half -> Expanded) */}
-      <div className="lg:hidden relative h-[calc(100vh-132px)] min-h-[500px] rounded-2xl border hairline-border overflow-hidden bg-surface">
-        {/* Minimal Floating Top Pill */}
-        <div className="absolute top-2.5 inset-x-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
-          <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border hairline-border bg-surface/90 backdrop-blur-md px-2.5 py-1 shadow-lg">
-            <Car className="h-3.5 w-3.5 text-accent shrink-0" />
-            <span className="text-xs font-semibold text-foreground truncate max-w-[115px]">
-              {vehicle.name}
-            </span>
-            <Badge variant={tel.ignition ? 'warning' : 'neutral'} dot className="text-[10px]">
-              {tel.ignition ? `${tel.speed_kmh.toFixed(0)} km/h` : 'PARKED'}
-            </Badge>
-          </div>
+      {/* Mobile & Tablet Layout: Full-Bleed MapLibre Canvas + Multi-Detent Collapsible Bottom Sheet */}
+      <div className="lg:hidden relative h-[calc(100dvh-160px)] min-h-[480px] rounded-2xl border hairline-border overflow-hidden bg-surface">
+        {unifiedMapTopBar}
 
-          <div className="pointer-events-auto relative">
-            <button
-              type="button"
-              onClick={() => setTestMenuOpen((o) => !o)}
-              aria-label="Test vehicle alerts"
-              className="inline-flex h-8 items-center gap-1 rounded-full border hairline-border bg-surface/90 backdrop-blur-md px-2.5 text-[11px] font-medium text-foreground shadow-lg cursor-pointer"
-            >
-              <AlertTriangle className="h-3.5 w-3.5 text-danger" />
-              <span>SOS Sim</span>
-              <MoreHorizontal className="h-3.5 w-3.5 text-foreground-muted" />
-            </button>
-
-            {testMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-border bg-surface shadow-2xl p-1.5 z-30 space-y-1 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    simulatorEngine.triggerVehicleCrash();
-                    setTestMenuOpen(false);
-                  }}
-                  className="w-full text-left rounded-lg px-2.5 py-2 text-danger font-semibold hover:bg-danger/10 cursor-pointer"
-                >
-                  Trigger 20s Crash SOS
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    simulatorEngine.triggerVehicleFaultAlert('SOS_MANUAL');
-                    setTestMenuOpen(false);
-                  }}
-                  className="w-full text-left rounded-lg px-2.5 py-2 text-foreground hover:bg-surface-elevated cursor-pointer"
-                >
-                  Trigger Manual SOS
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    simulatorEngine.triggerVehicleFaultAlert('EXT_POWER_LOST');
-                    setTestMenuOpen(false);
-                  }}
-                  className="w-full text-left rounded-lg px-2.5 py-2 text-warning hover:bg-surface-elevated cursor-pointer"
-                >
-                  Simulate 12V Battery Cut
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* MapLibre Canvas */}
+        {/* MapLibre Canvas (Zero duplicate floating HUD on mobile) */}
         <div className="absolute inset-0">
           <ErrorBoundary>
             <VehicleLiveMap
               vehicleDevice={vehicle}
-              onTriggerCrashSos={() => simulatorEngine.triggerVehicleCrash()}
-              onCommandImmobilize={(engage) =>
-                simulatorEngine.sendCommand(vehicle.device_id, { immobilize: engage }, 'pwa_cloud')
-              }
+              followVehicle={followVehicle}
+              showGeofences={showGeofences}
+              recenterSignal={recenterSignal}
+              isLightTheme={isLightTheme}
+              showDesktopHud={false}
+              geofences={geofences}
             />
           </ErrorBoundary>
         </div>
 
-        {/* Multi-Detent Collapsible Bottom Sheet (Peek -> Half -> Expanded) */}
+        {/* Multi-Detent Collapsible Bottom Sheet (Peek | Half | Full) */}
         <div
           className={cn(
-            'absolute inset-x-0 bottom-0 z-20 rounded-t-2xl border-t hairline-border bg-surface/95 backdrop-blur-xl shadow-2xl transition-all duration-200 flex flex-col',
+            'absolute inset-x-0 bottom-0 z-20 rounded-t-2xl border-t border-border/80 bg-[var(--dd-surface-0)]/96 backdrop-blur-xl shadow-2xl transition-all duration-200 flex flex-col',
             sheetDetent === 'peek'
-              ? 'h-[88px]'
+              ? 'h-[82px]'
               : sheetDetent === 'half'
               ? 'h-[50%]'
               : 'h-[84%]'
           )}
         >
-          {/* Sheet Grab Handle & Detent Switcher Bar */}
-          <div className="px-3.5 pt-2 pb-1.5 border-b hairline-border flex items-center justify-between gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={cycleDetent}
-              className="flex items-center gap-2 text-left min-w-0 flex-1 cursor-pointer"
-            >
-              <span className="h-1.5 w-8 rounded-full bg-border-strong shrink-0" />
+          {/* Single Clean Non-Wrapping Bottom Sheet Header Row */}
+          <div className="px-3 py-2 border-b hairline-border flex items-center justify-between gap-2 shrink-0 flex-nowrap">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
               <span className="text-xs font-semibold text-foreground truncate">
                 {vehicle.name}
               </span>
-              <span className="text-[11px] font-mono text-foreground-muted tabular-nums">
-                · {tel.ext_v.toFixed(1)}V · {immobilizeState}
-              </span>
-            </button>
+              <Badge
+                variant={
+                  immobilizeState === 'ENGAGED'
+                    ? 'danger'
+                    : immobilizeState === 'PENDING'
+                    ? 'warning'
+                    : 'success'
+                }
+                className="shrink-0 text-[9px] px-1.5 py-0.5"
+              >
+                {immobilizeState}
+              </Badge>
+            </div>
 
-            <div className="flex items-center gap-1 shrink-0">
-              {(['peek', 'half', 'expanded'] as const).map((d) => (
+            <div className="flex items-center gap-0.5 rounded-lg border border-border/70 bg-surface-elevated p-0.5 shrink-0">
+              {(['peek', 'half', 'full'] as const).map((d) => (
                 <button
                   key={d}
                   type="button"
                   onClick={() => setSheetDetent(d)}
                   className={cn(
-                    'rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase cursor-pointer',
+                    'rounded-md px-2 py-1 text-[10px] font-mono uppercase leading-none whitespace-nowrap transition-colors cursor-pointer',
                     sheetDetent === d
                       ? 'bg-accent text-[var(--dd-accent-fg)] font-semibold'
                       : 'text-foreground-muted hover:text-foreground'
@@ -681,18 +823,6 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
                   {d}
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={cycleDetent}
-                aria-label="Toggle sheet height"
-                className="p-1 text-foreground-muted hover:text-foreground cursor-pointer"
-              >
-                {sheetDetent === 'expanded' ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronUp className="h-4 w-4" />
-                )}
-              </button>
             </div>
           </div>
 

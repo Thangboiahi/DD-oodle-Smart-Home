@@ -24,6 +24,11 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  countVisibleWidgetsInSubtree,
+  flattenContainersWithMeta,
+  getDisplayTitle,
+} from '@/lib/layout/tree';
 import { LAN_TRANSPORT } from '@/lib/protocol/transports';
 import { simulatorEngine } from '@/lib/simulator/engine';
 import { useWorkspace } from '@/components/workspace/WorkspaceProvider';
@@ -147,15 +152,21 @@ export const CommandPalette: React.FC = () => {
       onSelect: closeAnd(() => router.push('/auth')),
     },
 
-    // Rooms from layout2D
-    ...prefs.layout2D.containers.map((c) => ({
-      id: `room-${c.id}`,
-      group: 'Rooms' as const,
-      label: c.title,
-      subtitle: `${c.itemIds.length} widgets/modules · ${c.kind.toUpperCase()}`,
-      icon: <LayoutGrid className="h-4 w-4" />,
-      onSelect: closeAnd(() => router.push('/')),
-    })),
+    // Rooms & Nested Containers from layout_tree
+    ...flattenContainersWithMeta(prefs.layout2D.layout_tree, prefs.layout2D.customTitles)
+      .filter(({ container }) => !prefs.layout2D.hiddenContainers.includes(container.id))
+      .map(({ container, pathLabel }) => ({
+        id: `room-${container.id}`,
+        group: 'Rooms' as const,
+        label: pathLabel,
+        subtitle: `${countVisibleWidgetsInSubtree(
+          container,
+          prefs.layout2D.hiddenItems,
+          prefs.layout2D.hiddenContainers
+        )} widgets/modules · ${container.kind.toUpperCase()}`,
+        icon: <LayoutGrid className="h-4 w-4" />,
+        onSelect: closeAnd(() => router.push('/')),
+      })),
 
     // Quick Inline Hardware & Scene Actions
     {
@@ -205,7 +216,7 @@ export const CommandPalette: React.FC = () => {
     ...Object.values(snapshot.devices).map((dev) => ({
       id: `dev-${dev.device_id}`,
       group: 'Devices' as const,
-      label: dev.name,
+      label: getDisplayTitle(prefs.layout2D.customTitles, dev.device_id, dev.name),
       subtitle: `${dev.module_code} · ${dev.device_id} · ${dev.state.rssi} dBm`,
       icon: <Cpu className="h-4 w-4" />,
       onSelect: closeAnd(() =>

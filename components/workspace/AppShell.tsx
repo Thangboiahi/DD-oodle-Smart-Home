@@ -468,14 +468,14 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             onSelectMode={(mode) => simulatorEngine.setTransportModeOverride(mode)}
           />
 
-          {/* Page Content with non-blocking GPU-composited entrance & safe bottom padding */}
+          {/* Page Content with non-blocking GPU-composited entrance & generous bottom clearance */}
           <motion.main
             id="main-workspace"
             key={pathname}
             initial={isEcoMotion ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={isEcoMotion ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' }}
-            className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-3 sm:py-4 pb-24 md:pb-8 [@media(max-height:500px)_and_(orientation:landscape)]:pb-4"
+            className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-5 lg:px-6 py-3 sm:py-4 pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-8 [@media(max-height:500px)_and_(orientation:landscape)]:pb-4"
           >
             {children}
           </motion.main>
@@ -485,7 +485,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
       {/* Mobile Portrait Persistent Bottom Navigation Bar (hidden on md+ and mobile landscape) */}
       <nav
         aria-label="Mobile Navigation"
-        className="md:hidden [@media(max-height:500px)_and_(orientation:landscape)]:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border dd-glass pb-safe"
+        className="md:hidden [@media(max-height:500px)_and_(orientation:landscape)]:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/80 bg-[var(--dd-surface-0)]/96 backdrop-blur-md pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.22)]"
       >
         <div className="grid grid-cols-4 h-14 px-1">
           {primaryNav.map((item) => {

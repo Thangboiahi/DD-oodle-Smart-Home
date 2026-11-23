@@ -68,7 +68,7 @@ export const StatusPill: React.FC<StatusPillProps> = ({
       case 'LOCAL_HUB':
         return {
           label: 'Local Hub (Offline LAN)',
-          shortLabel: 'Local Hub',
+          shortLabel: 'Hub',
           badgeClass: 'bg-accent-soft text-accent border-accent-border',
           dotClass: 'bg-accent',
           icon: HardDrive,
@@ -76,7 +76,7 @@ export const StatusPill: React.FC<StatusPillProps> = ({
       case 'DIRECT_LAN':
         return {
           label: 'Direct LAN',
-          shortLabel: 'Direct LAN',
+          shortLabel: 'LAN',
           badgeClass: 'bg-accent-soft text-accent border-accent-border',
           dotClass: 'bg-accent',
           icon: Wifi,
@@ -84,7 +84,7 @@ export const StatusPill: React.FC<StatusPillProps> = ({
       case 'DIRECT_BLE':
         return {
           label: 'Direct Bluetooth (BLE)',
-          shortLabel: 'Direct BLE',
+          shortLabel: 'BLE',
           badgeClass: 'bg-warning-soft text-warning border-warning/40',
           dotClass: 'bg-warning',
           icon: Bluetooth,
@@ -93,7 +93,7 @@ export const StatusPill: React.FC<StatusPillProps> = ({
       default:
         return {
           label: 'Manual Failsafe',
-          shortLabel: 'Failsafe',
+          shortLabel: 'Manual',
           badgeClass: 'bg-danger-soft text-danger border-danger/40',
           dotClass: 'bg-danger',
           icon: Sliders,
@@ -157,16 +157,17 @@ export const StatusPill: React.FC<StatusPillProps> = ({
       <button
         type="button"
         onClick={() => setOpen(true)}
+        aria-label={`Connectivity mode: ${pill.label}`}
         className={cn(
-          'group inline-flex items-center gap-1.5 h-8 rounded-full border px-2.5 text-xs font-medium transition active:scale-95 cursor-pointer',
+          'group shrink-0 inline-flex items-center gap-1.5 h-9 rounded-full border px-2 min-[400px]:px-2.5 text-xs font-medium transition active:scale-95 cursor-pointer whitespace-nowrap',
           pill.badgeClass
         )}
       >
-        <span className={cn('h-1.5 w-1.5 rounded-full animate-pulse', pill.dotClass)} />
-        <Icon className="h-3.5 w-3.5 shrink-0" />
-        <span className="hidden sm:inline font-mono text-[11px]">{pill.label}</span>
-        <span className="sm:hidden font-mono text-[11px]">{pill.shortLabel}</span>
-        <ChevronRight className="h-3 w-3 opacity-60 group-hover:translate-x-0.5 transition" />
+        <span className={cn('h-2 w-2 rounded-full animate-pulse shrink-0', pill.dotClass)} />
+        <Icon className="hidden min-[400px]:inline-block h-3.5 w-3.5 shrink-0" />
+        <span className="hidden md:inline font-mono text-[11px]">{pill.label}</span>
+        <span className="md:hidden font-mono text-[11px] leading-none">{pill.shortLabel}</span>
+        <ChevronRight className="hidden min-[400px]:inline-block h-3 w-3 opacity-60 group-hover:translate-x-0.5 transition shrink-0" />
       </button>
 
       {/* Connectivity Diagnostics & Mode Drawer */}

@@ -48,6 +48,8 @@ import {
 
 export interface DynamicCapabilityCardProps {
   device: VirtualDeviceInstance;
+  /** Optional UI-only display alias (never mutates hardware device_id or capability keys) */
+  displayName?: string;
   tariffInr?: number;
   hasPlusHistory?: boolean;
   connectedHubMembers?: Array<{ device_id: string; name: string; module_code: string; via?: string }>;
@@ -67,6 +69,7 @@ export function isReadOnlySensorKey(device: VirtualDeviceInstance, key: string):
 
 export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
   device,
+  displayName,
   tariffInr = 7.5,
   hasPlusHistory = true,
   connectedHubMembers = [],
@@ -75,6 +78,7 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
   onOpenLocalAccess,
   onInspect,
 }) => {
+  const cardTitle = displayName?.trim() || device.name;
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
   const [ackedKeys, setAckedKeys] = useState<Record<string, boolean>>({});
   const [optimisticOverrides, setOptimisticOverrides] = useState<
@@ -187,7 +191,7 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
             )}
           </div>
           <h3 className="mt-1 text-sm font-semibold tracking-tight text-foreground truncate">
-            {device.name}
+            {cardTitle}
           </h3>
         </div>
 
@@ -197,7 +201,7 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
               type="button"
               onClick={() => onInspect(device.device_id)}
               title="Open Quick Inspector"
-              aria-label={`Inspect ${device.name}`}
+              aria-label={`Inspect ${cardTitle}`}
               className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 bg-surface-elevated text-foreground-secondary hover:text-accent hover:border-accent-border transition-colors cursor-pointer"
             >
               <Eye className="h-3.5 w-3.5" />
@@ -210,7 +214,7 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
                 : `/devices/${device.device_id}`
             }
             title="Open Device Detail & Settings"
-            aria-label={`Open full details for ${device.name}`}
+            aria-label={`Open full details for ${cardTitle}`}
             className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/70 bg-surface-elevated px-2 text-[10px] font-mono text-foreground-secondary hover:text-foreground hover:border-border-strong transition-colors"
           >
             <span>Detail</span>

@@ -36,6 +36,11 @@ import {
   useWorkspace,
 } from '@/components/workspace';
 import { cn } from '@/lib/utils';
+import {
+  countVisibleWidgetsInSubtree,
+  flattenContainersWithMeta,
+  getDisplayTitle,
+} from '@/lib/layout/tree';
 
 export default function DDoodleSmartHomeDashboard() {
   const {
@@ -105,16 +110,29 @@ export default function DDoodleSmartHomeDashboard() {
       via: d.state.via,
     }));
 
-  const roomContainers = prefs.layout2D.containers;
+  const visibleFlatContainers = flattenContainersWithMeta(
+    prefs.layout2D.layout_tree,
+    prefs.layout2D.customTitles
+  ).filter(
+    ({ container }) =>
+      container.id !== 'zone_monitors' &&
+      !prefs.layout2D.hiddenContainers.includes(container.id)
+  );
   const filterTabs = [
-    { id: 'all', label: 'All Rooms', count: devicesList.length },
-    ...roomContainers
-      .filter((c) => c.id !== 'zone_monitors')
-      .map((c) => ({
-        id: c.id,
-        label: c.title,
-        count: c.itemIds.filter((id) => !prefs.layout2D.hiddenItems.includes(id)).length,
-      })),
+    {
+      id: 'all',
+      label: 'All Rooms',
+      count: devicesList.filter((d) => !prefs.layout2D.hiddenItems.includes(d.device_id)).length,
+    },
+    ...visibleFlatContainers.map(({ container }) => ({
+      id: container.id,
+      label: getDisplayTitle(prefs.layout2D.customTitles, container.id, container.title),
+      count: countVisibleWidgetsInSubtree(
+        container,
+        prefs.layout2D.hiddenItems,
+        prefs.layout2D.hiddenContainers
+      ),
+    })),
   ];
 
   const inspectedDevice = snapshot.devices[inspectedDeviceId] ?? devicesList[0];
