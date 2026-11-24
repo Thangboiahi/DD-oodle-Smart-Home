@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Activity,
   AlertTriangle,
@@ -36,8 +37,19 @@ import { OTA_SECURITY } from '@/lib/protocol/transports';
 import { DFY_3D_TWIN_ADDON_INR, resolveEntitlements } from '@/lib/entitlements/resolver';
 import { ContractComplianceReport, runContractV14Audit } from '@/lib/protocol/validator';
 import { simulatorEngine } from '@/lib/simulator/engine';
-import { Home3DTwinView } from '@/components/twin/Home3DTwinView';
 import { SimulatorWorkbench } from '@/components/simulator/SimulatorWorkbench';
+
+const Home3DTwinView = dynamic(
+  () => import('@/components/twin/Home3DTwinView').then((m) => m.Home3DTwinView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[calc(100dvh-136px)] md:h-[calc(100dvh-96px)] min-h-[500px] rounded-2xl border border-border bg-surface flex items-center justify-center text-xs font-mono text-foreground-muted">
+        Loading 3D Twin Builder...
+      </div>
+    ),
+  }
+);
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import {
   Badge,

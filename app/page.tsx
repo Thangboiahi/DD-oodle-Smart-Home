@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { motion } from 'motion/react';
 import {
   Activity,
@@ -20,8 +21,19 @@ import { Phase1ModuleCode } from '@/lib/protocol/contract';
 import { resolveEntitlements } from '@/lib/entitlements/resolver';
 import { DynamicCapabilityCard } from '@/components/capabilities/DynamicCapabilityCard';
 import { SimulatorWorkbench } from '@/components/simulator/SimulatorWorkbench';
-import { Home3DTwinView } from '@/components/twin/Home3DTwinView';
 import { VoiceIntegrationsModal } from '@/components/voice/VoiceIntegrationsModal';
+
+const Home3DTwinView = dynamic(
+  () => import('@/components/twin/Home3DTwinView').then((m) => m.Home3DTwinView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[calc(100dvh-136px)] md:h-[calc(100dvh-96px)] min-h-[500px] rounded-2xl border border-border bg-surface flex items-center justify-center text-xs font-mono text-foreground-muted">
+        Loading 3D Home Twin...
+      </div>
+    ),
+  }
+);
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import {
   Badge,
