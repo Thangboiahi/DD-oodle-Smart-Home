@@ -26,7 +26,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import {
-  HomeTemplateId,
+  HomeLayout3D,
   OtaPayload,
   Phase1ModuleCode,
   SubscriptionTier,
@@ -54,7 +54,6 @@ import {
 import {
   CollapsibleSection,
   DockablePanel,
-  FullscreenStage,
   useWorkspace,
 } from '@/components/workspace';
 
@@ -189,14 +188,13 @@ export default function AdminInstallerPortal() {
   ]);
   const [newClaimId, setNewClaimId] = useState('dd_pwr02_f903');
   const [newClaimMod, setNewClaimMod] = useState<Phase1ModuleCode>('PWR-02');
-  const [dfyTemplate, setDfyTemplate] = useState<HomeTemplateId>('2bhk');
   const [dfyDelivered, setDfyDelivered] = useState(false);
-  const [pinCoords, setPinCoords] = useState<Record<string, { x: number; z: number }>>({
-    dd_pwr01_a1b2c3: { x: -2.2, z: -0.5 },
-    dd_pwr02_d4e5f6: { x: 2.2, z: -1.2 },
-    dd_pwr03_g7h8i9: { x: 2.2, z: 1.6 },
-    dd_wat01_j1k2l3: { x: -2.2, z: 2.8 },
-  });
+  const [savedDfySummary, setSavedDfySummary] = useState<{
+    template: string;
+    floors: number;
+    rooms: number;
+    placements: number;
+  }>({ template: '2BHK', floors: 2, rooms: 6, placements: 6 });
 
   // Signed OTA Manager (G5) state
   const [otaModule, setOtaModule] = useState<Phase1ModuleCode>('PWR-03');
@@ -770,7 +768,7 @@ export default function AdminInstallerPortal() {
               </CardContent>
             </Card>
 
-            {/* Installer 3D Pin Coordinate Builder & ₹999 DFY Delivery */}
+            {/* Installer ₹999 DFY 3D Home Twin Delivery Status */}
             <Card className="space-y-3 hairline-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -778,67 +776,34 @@ export default function AdminInstallerPortal() {
                   <span>₹{DFY_3D_TWIN_ADDON_INR} DFY 3D Home Twin Builder</span>
                 </CardTitle>
                 <Badge variant={dfyDelivered ? 'success' : 'accent'}>
-                  {dfyDelivered ? 'DELIVERED' : 'IN PROGRESS'}
+                  {dfyDelivered ? 'DELIVERED' : 'LIVE STUDIO'}
                 </Badge>
               </CardHeader>
               <CardContent className="space-y-3 text-xs">
-                <div className="space-y-1">
-                  <span className="text-foreground-secondary font-medium block">
-                    Indian Home Template (`homes/home_imphal_001/layout_3d`)
-                  </span>
-                  <SegmentedControl<HomeTemplateId>
-                    fullWidth
-                    size="sm"
-                    ariaLabel="Home 3D template"
-                    value={dfyTemplate}
-                    onChange={setDfyTemplate}
-                    options={[
-                      { value: '1bhk', label: '1BHK' },
-                      { value: '2bhk', label: '2BHK' },
-                      { value: '3bhk', label: '3BHK' },
-                      { value: 'duplex', label: 'Duplex' },
-                      { value: 'compact', label: 'Compact' },
-                    ]}
-                  />
-                </div>
+                <p className="text-foreground-secondary leading-relaxed">
+                  Use the unified 3D Studio below to configure Indian templates, multi-floor rooms
+                  (0.5m grid), and Tap-to-Snap wall/ceiling/terrace module placement. Clicking{' '}
+                  <strong className="text-foreground">Save</strong> inside the studio persists directly
+                  to <code className="font-mono text-accent">homes/home_imphal_001/layout_3d</code>.
+                </p>
 
-                <div className="space-y-1.5 max-h-40 overflow-y-auto dd-scroll">
-                  {Object.entries(pinCoords).map(([devId, pos]) => (
-                    <div
-                      key={devId}
-                      className="flex items-center justify-between gap-2 rounded hairline-border bg-surface-elevated px-2.5 py-1.5 font-mono text-[11px]"
-                    >
-                      <span className="truncate text-foreground">{devId}</span>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <input
-                          type="number"
-                          step="0.2"
-                          aria-label={`${devId} X coordinate`}
-                          value={pos.x}
-                          onChange={(e) =>
-                            setPinCoords((prev) => ({
-                              ...prev,
-                              [devId]: { ...pos, x: Number(e.target.value) },
-                            }))
-                          }
-                          className="w-16 h-8 rounded hairline-border bg-surface px-1.5 tabular-nums"
-                        />
-                        <input
-                          type="number"
-                          step="0.2"
-                          aria-label={`${devId} Z coordinate`}
-                          value={pos.z}
-                          onChange={(e) =>
-                            setPinCoords((prev) => ({
-                              ...prev,
-                              [devId]: { ...pos, z: Number(e.target.value) },
-                            }))
-                          }
-                          className="w-16 h-8 rounded hairline-border bg-surface px-1.5 tabular-nums"
-                        />
-                      </div>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px] tabular-nums">
+                  <div className="rounded-lg hairline-border bg-surface-elevated p-2">
+                    <div className="text-[9px] text-foreground-muted">TEMPLATE</div>
+                    <div className="font-bold text-foreground">{savedDfySummary.template}</div>
+                  </div>
+                  <div className="rounded-lg hairline-border bg-surface-elevated p-2">
+                    <div className="text-[9px] text-foreground-muted">FLOORS</div>
+                    <div className="font-bold text-foreground">{savedDfySummary.floors}</div>
+                  </div>
+                  <div className="rounded-lg hairline-border bg-surface-elevated p-2">
+                    <div className="text-[9px] text-foreground-muted">ROOMS</div>
+                    <div className="font-bold text-foreground">{savedDfySummary.rooms}</div>
+                  </div>
+                  <div className="rounded-lg hairline-border bg-surface-elevated p-2">
+                    <div className="text-[9px] text-foreground-muted">MODULES</div>
+                    <div className="font-bold text-accent">{savedDfySummary.placements}</div>
+                  </div>
                 </div>
 
                 <Button
@@ -848,31 +813,38 @@ export default function AdminInstallerPortal() {
                     setDfyDelivered(true);
                     pushToast({
                       title: `₹${DFY_3D_TWIN_ADDON_INR} DFY 3D Home Twin Marked Delivered`,
-                      description: `Saved ${dfyTemplate.toUpperCase()} layout_3d to Firestore.`,
+                      description: `Synced ${savedDfySummary.template} (${savedDfySummary.rooms} rooms, ${savedDfySummary.placements} modules) to home_imphal_001.`,
                       tone: 'success',
                     });
                   }}
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Save `layout_3d` &amp; Mark ₹{DFY_3D_TWIN_ADDON_INR} DFY Delivered</span>
+                  <span>Mark ₹{DFY_3D_TWIN_ADDON_INR} DFY 3D Twin Delivered</span>
                 </Button>
               </CardContent>
             </Card>
           </div>
 
-          {/* Live Fullscreen 3D Twin Preview for Installer */}
-          <FullscreenStage
-            title={`Installer 3D Twin Preview — ${dfyTemplate.toUpperCase()}`}
-            subtitle="Tap fixtures to verify live toggles before customer handoff"
-          >
-            <ErrorBoundary>
-              <Home3DTwinView
-                devices={snapshot.devices}
-                entitlements={demoEntitlements}
-                onSendCommand={(id, set) => simulatorEngine.sendCommand(id, set, 'pwa_cloud')}
-              />
-            </ErrorBoundary>
-          </FullscreenStage>
+          {/* Unified Full-Viewport 3D Twin Studio for Installer (Phase 10D) */}
+          <ErrorBoundary>
+            <Home3DTwinView
+              homeId="home_imphal_001"
+              canCustomize
+              isAdminInstaller
+              defaultCustomizeOpen
+              devices={snapshot.devices}
+              entitlements={demoEntitlements}
+              onLayoutSaved={(saved: HomeLayout3D) => {
+                setSavedDfySummary({
+                  template: saved.template_id.toUpperCase(),
+                  floors: saved.floors?.length ?? 1,
+                  rooms: saved.rooms?.length ?? 0,
+                  placements: saved.placements?.filter((p) => !p.hidden).length ?? saved.pins.length,
+                });
+              }}
+              onSendCommand={(id, set) => simulatorEngine.sendCommand(id, set, 'pwa_cloud')}
+            />
+          </ErrorBoundary>
         </div>
       )}
 

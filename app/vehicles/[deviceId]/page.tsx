@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui';
@@ -9,6 +9,7 @@ import { VehicleSafetyWorkspace } from '@/components/map/VehicleSafetyWorkspace'
 
 export default function VehicleDetailPage() {
   const params = useParams<{ deviceId: string }>();
+  const router = useRouter();
   const deviceId = decodeURIComponent(params?.deviceId ?? 'dd_veh01_m4n5p6');
 
   return (
@@ -21,7 +22,15 @@ export default function VehicleDetailPage() {
           </Button>
         </Link>
       </div>
-      <VehicleSafetyWorkspace initialDeviceId={deviceId} />
+      <VehicleSafetyWorkspace
+        initialDeviceId={deviceId}
+        compactTopOffset
+        onSelectVehicle={(nextId) => {
+          if (nextId !== deviceId) {
+            router.replace(`/vehicles/${encodeURIComponent(nextId)}`);
+          }
+        }}
+      />
     </div>
   );
 }

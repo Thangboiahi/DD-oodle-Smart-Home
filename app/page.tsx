@@ -25,13 +25,11 @@ import { VoiceIntegrationsModal } from '@/components/voice/VoiceIntegrationsModa
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import {
   Badge,
-  Button,
   useToast,
 } from '@/components/ui';
 import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import {
   DockablePanel,
-  FullscreenStage,
   UniversalLayoutStudio,
   useWorkspace,
 } from '@/components/workspace';
@@ -77,7 +75,11 @@ export default function DDoodleSmartHomeDashboard() {
   // Listen for global Quick Tools header toggles (2D/3D switch & Voice C2C modal)
   useEffect(() => {
     const onToggleViewMode = () => {
-      setViewMode((prev) => (prev === '2d' ? '3d' : '2d'));
+      setViewMode((prev) => {
+        const next = prev === '2d' ? '3d' : '2d';
+        if (next === '3d') setEditLayoutMode(false);
+        return next;
+      });
     };
     const onOpenVoice = () => {
       setShowVoiceModal(true);
@@ -88,7 +90,7 @@ export default function DDoodleSmartHomeDashboard() {
       window.removeEventListener('ddoodle:toggle-home-view-mode', onToggleViewMode);
       window.removeEventListener('ddoodle:open-voice-modal', onOpenVoice);
     };
-  }, []);
+  }, [setEditLayoutMode]);
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
@@ -157,7 +159,8 @@ export default function DDoodleSmartHomeDashboard() {
   return (
     <PullToRefresh onRefresh={handlePullRefresh} hapticsEnabled={prefs.hapticsEnabled}>
       <div className="space-y-3">
-        {/* PHASE 8: Single Sleek Compact Dashboard Sub-Bar ([2D|3D] + Room Snap-Strip + [Actions ▾]) */}
+        {/* 2D Dashboard Sub-Bar (hidden in full-viewport 3D mode so zero duplicate chrome) */}
+        {viewMode === '2d' && (
         <div className="flex items-center justify-between gap-2 rounded-2xl border hairline-border bg-surface/75 px-2.5 py-1.5">
           {/* Compact 2D / 3D Segmented Toggle */}
           <div className="inline-flex shrink-0 rounded-xl border border-border/70 bg-surface-elevated p-0.5">
@@ -166,9 +169,7 @@ export default function DDoodleSmartHomeDashboard() {
               onClick={() => setViewMode('2d')}
               className={cn(
                 'inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors cursor-pointer',
-                viewMode === '2d'
-                  ? 'bg-accent text-[var(--dd-accent-fg)] font-semibold'
-                  : 'text-foreground-secondary hover:text-foreground'
+                'bg-accent text-[var(--dd-accent-fg)] font-semibold'
               )}
             >
               <LayoutGrid className="h-3.5 w-3.5" />
@@ -176,12 +177,13 @@ export default function DDoodleSmartHomeDashboard() {
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('3d')}
+              onClick={() => {
+                setEditLayoutMode(false);
+                setViewMode('3d');
+              }}
               className={cn(
                 'inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors cursor-pointer',
-                viewMode === '3d'
-                  ? 'bg-accent text-[var(--dd-accent-fg)] font-semibold'
-                  : 'text-foreground-secondary hover:text-foreground'
+                'text-foreground-secondary hover:text-foreground'
               )}
             >
               <Box className="h-3.5 w-3.5" />
@@ -190,8 +192,7 @@ export default function DDoodleSmartHomeDashboard() {
           </div>
 
           {/* Horizontal Snap-Scrolling Room Filter Strip (zero visible scrollbar) */}
-          {viewMode === '2d' && (
-            <div className="snap-strip flex-1 items-center gap-1.5 px-1">
+          <div className="snap-strip flex-1 items-center gap-1.5 px-1">
               {filterTabs.map((r) => {
                 const active = selectedRoom === r.id;
                 return (
@@ -220,8 +221,7 @@ export default function DDoodleSmartHomeDashboard() {
                   </button>
                 );
               })}
-            </div>
-          )}
+          </div>
 
           {/* Single Compact [Actions ▾] Dropdown */}
           <div ref={actionsMenuRef} className="relative shrink-0">
@@ -330,30 +330,23 @@ export default function DDoodleSmartHomeDashboard() {
             )}
           </div>
         </div>
+        )}
 
-        {/* Main Stage: 3D Home Twin or Universal 2D Layout Studio */}
+        {/* Main Stage: Full-Viewport 3D Home Twin or Universal 2D Layout Studio */}
         {viewMode === '3d' ? (
-          <FullscreenStage
-            title="3D Home Digital Twin"
-            subtitle="Interactive Three.js Spatial View · Switch back to 2D Studio anytime for Eco mode"
-            toolbar={
-              <Button variant="secondary" size="sm" onClick={() => setViewMode('2d')}>
-                <LayoutGrid className="h-3.5 w-3.5" />
-                <span>Eco 2D Fallback</span>
-              </Button>
-            }
-          >
-            <ErrorBoundary>
-              <Home3DTwinView
-                devices={snapshot.devices}
-                entitlements={entitlements}
-                onSendCommand={(deviceId, set) =>
-                  simulatorEngine.sendCommand(deviceId, set, 'pwa_cloud')
-                }
-                onInspectDevice={openInspectorFor}
-              />
-            </ErrorBoundary>
-          </FullscreenStage>
+          <ErrorBoundary>
+            <Home3DTwinView
+              homeId={prefs.activeHomeId}
+              canCustomize={prefs.userRole === 'OWNER'}
+              devices={snapshot.devices}
+              entitlements={entitlements}
+              onSendCommand={(deviceId, set) =>
+                simulatorEngine.sendCommand(deviceId, set, 'pwa_cloud')
+              }
+              onInspectDevice={openInspectorFor}
+              onExitTo2D={() => setViewMode('2d')}
+            />
+          </ErrorBoundary>
         ) : (
           <UniversalLayoutStudio
             selectedRoomFilter={selectedRoom}

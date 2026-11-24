@@ -119,11 +119,14 @@ service cloud.firestore {
     function isValidLayout3DMap(layout) {
       return layout is map &&
         layout.keys().hasAll(['template_id', 'eco_fallback', 'pins']) &&
-        layout.keys().hasOnly(['template_id', 'eco_fallback', 'pins']) &&
+        layout.keys().hasOnly(['template_id', 'eco_fallback', 'pins', 'floors', 'rooms', 'placements']) &&
         layout.template_id in ['1bhk', '2bhk', '3bhk', 'duplex', 'compact'] &&
         layout.eco_fallback is bool &&
         layout.pins is list && layout.pins.size() <= 64 &&
-        (layout.pins.size() == 0 || layout.pins[0] is map);
+        (layout.pins.size() == 0 || layout.pins[0] is map) &&
+        (!('floors' in layout) || (layout.floors is list && layout.floors.size() <= 8 && (layout.floors.size() == 0 || layout.floors[0] is map))) &&
+        (!('rooms' in layout) || (layout.rooms is list && layout.rooms.size() <= 40 && (layout.rooms.size() == 0 || layout.rooms[0] is map))) &&
+        (!('placements' in layout) || (layout.placements is list && layout.placements.size() <= 64 && (layout.placements.size() == 0 || layout.placements[0] is map)));
     }
 
     function isValidHome(data) {

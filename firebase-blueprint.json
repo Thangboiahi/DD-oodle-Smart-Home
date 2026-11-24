@@ -39,7 +39,7 @@
         "hub_ip": { "type": "string", "maxLength": 45 },
         "members": { "type": "object", "description": "Map of uid -> owner | family (max 20 members)." },
         "subscription": { "type": "object", "description": "Server/admin-controlled tier, status, trial_ends_at, expires_at, dfy_3d_purchased." },
-        "layout_3d": { "type": "object", "description": "Three.js template_id, eco_fallback, and device coordinate pins[]." },
+        "layout_3d": { "type": "object", "description": "Three.js template_id, eco_fallback, device pins[], and optional custom floors[], rooms[], and surface placements[]." },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

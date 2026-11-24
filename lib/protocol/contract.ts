@@ -495,6 +495,51 @@ export interface HomeSubscriptionDoc {
 
 export type HomeTemplateId = '1bhk' | '2bhk' | '3bhk' | 'duplex' | 'compact';
 
+export type Layout3DSurface = 'north' | 'south' | 'east' | 'west' | 'ceiling' | 'floor';
+
+export interface Layout3DFloor {
+  id: string;
+  label: string;
+  short_label: string;
+  order: number;
+  wall_height: number;
+  slab_thickness?: number;
+  visible?: boolean;
+}
+
+export interface Layout3DRoom {
+  id: string;
+  name: string;
+  short_name: string;
+  floor_id: string;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  wall_height?: number;
+  floor_type: 'marble' | 'wood' | 'tile' | 'kitchen_tile' | 'outdoor' | 'garage';
+  accent_tint?: string | null;
+}
+
+export interface Layout3DPlacement {
+  device_id: string;
+  room_id: string;
+  floor_id: string;
+  surface: Layout3DSurface;
+  /** Normalized offset along wall (-0.42..0.42) or local X offset (m) on floor/ceiling */
+  offset_along: number;
+  /** Height above floor slab (m) */
+  elevation_m: number;
+  /** Local Z offset (m) when placed on floor or ceiling */
+  offset_z?: number;
+  /** Discrete 90-degree yaw rotation adjustment */
+  rotation_deg: number;
+  /** Uniform model scale (0.7..1.5) */
+  scale: number;
+  /** Hide device from 3D view without unbinding hardware */
+  hidden?: boolean;
+}
+
 export interface Layout3DPin {
   device_id: string;
   room_id: string;
@@ -508,6 +553,10 @@ export interface HomeLayout3D {
   template_id: HomeTemplateId;
   eco_fallback: boolean;
   pins: Layout3DPin[];
+  /** Phase 10D optional multi-floor / room / surface-snap customization (backward-compatible) */
+  floors?: Layout3DFloor[];
+  rooms?: Layout3DRoom[];
+  placements?: Layout3DPlacement[];
 }
 
 export interface VehicleGeofence {
