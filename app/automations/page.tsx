@@ -32,6 +32,9 @@ import {
   Button,
   Dropdown,
   SegmentedControl,
+  ThemedCheckbox,
+  ThemedSelect,
+  ThemedTimePicker,
   useToast,
 } from '@/components/ui';
 import {
@@ -590,16 +593,17 @@ export default function AutomationsPage() {
                   placeholder="key (e.g. p)"
                   className="h-9 rounded-lg border border-border bg-surface px-2.5 text-foreground"
                 />
-                <select
+                <ThemedSelect
+                  ariaLabel="Trigger comparison operator"
                   value={draftTriggerOp}
-                  onChange={(e) => setDraftTriggerOp(e.target.value as '>' | '<' | '==' | '!=')}
-                  className="h-9 rounded-lg border border-border bg-surface px-2 text-foreground"
-                >
-                  <option value=">">&gt;</option>
-                  <option value="<">&lt;</option>
-                  <option value="==">==</option>
-                  <option value="!=">!=</option>
-                </select>
+                  onChange={(val) => setDraftTriggerOp(val as '>' | '<' | '==' | '!=')}
+                  options={[
+                    { value: '>', label: '> (Greater than)' },
+                    { value: '<', label: '< (Less than)' },
+                    { value: '==', label: '== (Equals)' },
+                    { value: '!=', label: '!= (Not equals)' },
+                  ]}
+                />
                 <input
                   type="text"
                   value={draftTriggerVal}
@@ -610,49 +614,45 @@ export default function AutomationsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={draftCondNot}
-                    onChange={(e) => setDraftCondNot(e.target.checked)}
-                  />
-                  <span className="text-foreground-secondary">
-                    Apply <code className="font-mono text-accent">NOT</code> operator inversion (`v &gt; 190` → `v &lt;= 190`)
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={draftIncludeElse}
-                    onChange={(e) => setDraftIncludeElse(e.target.checked)}
-                  />
-                  <span className="text-foreground-secondary">
-                    Generate <code className="font-mono text-accent">ELSE</code> complementary rule branch
-                  </span>
-                </label>
+                <ThemedCheckbox
+                  checked={draftCondNot}
+                  onChange={setDraftCondNot}
+                  label={
+                    <span className="text-foreground-secondary">
+                      Apply <code className="font-mono text-accent">NOT</code> operator inversion (`v &gt; 190` → `v &lt;= 190`)
+                    </span>
+                  }
+                />
+                <ThemedCheckbox
+                  checked={draftIncludeElse}
+                  onChange={setDraftIncludeElse}
+                  label={
+                    <span className="text-foreground-secondary">
+                      Generate <code className="font-mono text-accent">ELSE</code> complementary rule branch
+                    </span>
+                  }
+                />
               </div>
             </div>
 
             {/* Time Window, Cooldown & Action */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono">
-              <label className="space-y-1">
-                <span className="text-[10px] text-foreground-muted">WINDOW START</span>
-                <input
-                  type="time"
+              <div className="space-y-1">
+                <span className="text-[10px] text-foreground-muted block">WINDOW START</span>
+                <ThemedTimePicker
                   value={draftWindowStart}
-                  onChange={(e) => setDraftWindowStart(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-border bg-surface-elevated px-2 text-foreground tabular-nums"
+                  onChange={setDraftWindowStart}
+                  ariaLabel="Window start time"
                 />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[10px] text-foreground-muted">WINDOW END</span>
-                <input
-                  type="time"
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] text-foreground-muted block">WINDOW END</span>
+                <ThemedTimePicker
                   value={draftWindowEnd}
-                  onChange={(e) => setDraftWindowEnd(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-border bg-surface-elevated px-2 text-foreground tabular-nums"
+                  onChange={setDraftWindowEnd}
+                  ariaLabel="Window end time"
                 />
-              </label>
+              </div>
               <label className="space-y-1">
                 <span className="text-[10px] text-foreground-muted">COOLDOWN (s)</span>
                 <input

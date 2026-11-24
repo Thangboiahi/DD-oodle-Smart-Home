@@ -59,7 +59,7 @@ import {
 } from '@/lib/layout/tree';
 import { DynamicCapabilityCard } from '@/components/capabilities/DynamicCapabilityCard';
 import { simulatorEngine } from '@/lib/simulator/engine';
-import { Badge, Button, EmptyState, triggerHaptic, useToast } from '@/components/ui';
+import { Badge, Button, EmptyState, ThemedSelect, triggerHaptic, useToast } from '@/components/ui';
 import { useWorkspace } from './WorkspaceProvider';
 import { MONITOR_CATALOG, StandaloneMonitorWidget } from './StandaloneMonitors';
 
@@ -1653,22 +1653,23 @@ export const UniversalLayoutStudio: React.FC<UniversalLayoutStudioProps> = ({
                 placeholder="New container or sub-zone name..."
                 className="flex-1 min-w-[140px] h-7 rounded-lg border border-border bg-surface-elevated px-2.5 text-xs text-foreground focus:outline-none focus:border-accent"
               />
-              <select
-                aria-label="Parent container for new zone"
-                value={newZoneParentId}
-                onChange={(e) => setNewZoneParentId(e.target.value)}
-                className="h-7 max-w-[150px] rounded-lg border border-border bg-surface-elevated px-2 text-[11px] text-foreground focus:outline-none focus:border-accent"
-              >
-                <option value="__root__">In: Root Level</option>
-                {flatContainers
-                  .filter((entry) => entry.depth < MAX_NESTING_DEPTH - 1)
-                  .map((entry) => (
-                    <option key={entry.container.id} value={entry.container.id}>
-                      In: {'— '.repeat(entry.depth)}
-                      {getContainerDisplayTitle(entry.container)}
-                    </option>
-                  ))}
-              </select>
+              <div className="min-w-[140px] max-w-[180px]">
+                <ThemedSelect
+                  size="xs"
+                  ariaLabel="Parent container for new zone"
+                  value={newZoneParentId}
+                  onChange={setNewZoneParentId}
+                  options={[
+                    { value: '__root__', label: 'In: Root Level' },
+                    ...flatContainers
+                      .filter((entry) => entry.depth < MAX_NESTING_DEPTH - 1)
+                      .map((entry) => ({
+                        value: entry.container.id,
+                        label: `In: ${'— '.repeat(entry.depth)}${getContainerDisplayTitle(entry.container)}`,
+                      })),
+                  ]}
+                />
+              </div>
               <button
                 type="submit"
                 disabled={!newZoneTitle.trim()}

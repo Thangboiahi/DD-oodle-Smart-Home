@@ -33,6 +33,7 @@ import {
 import { simulatorEngine } from '@/lib/simulator/engine';
 import { ResolvedEntitlements } from '@/lib/entitlements/resolver';
 import { Phase1ModuleCode } from '@/lib/protocol/contract';
+import { ThemedCheckbox, ThemedSelect } from '@/components/ui';
 
 interface AutomationRulesEngineProps {
   entitlements: ResolvedEntitlements;
@@ -305,11 +306,10 @@ export const AutomationRulesEngine: React.FC<AutomationRulesEngineProps> = ({
                           {isLocal ? 'ESP32 / Hub Local' : 'Cloud Geofence'}
                         </span>
 
-                        <input
-                          type="checkbox"
+                        <ThemedCheckbox
                           checked={recipe.enabled}
                           onChange={() => toggleRule(recipe.id)}
-                          className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 cursor-pointer"
+                          aria-label={`Toggle ${recipe.name}`}
                         />
                       </div>
                     </div>
@@ -382,18 +382,19 @@ export const AutomationRulesEngine: React.FC<AutomationRulesEngineProps> = ({
 
               {/* Target Device */}
               <div className="space-y-1.5">
-                <label className="text-slate-400 text-[11px]">Target Device:</label>
-                <select
+                <label className="text-slate-400 text-[11px] block">Target Device:</label>
+                <ThemedSelect
+                  ariaLabel="Target Device"
                   value={newRuleDevice}
-                  onChange={(e) => setNewRuleDevice(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 font-mono text-xs focus:outline-none focus:border-amber-500"
-                >
-                  <option value="dd_pwr03_g7h8i9">dd_pwr03_g7h8i9 (PWR-03 Heavy Appliance Switch)</option>
-                  <option value="dd_wat01_j1k2l3">dd_wat01_j1k2l3 (WAT-01 Overhead Tank Controller)</option>
-                  <option value="dd_pwr01_a1b2c3">dd_pwr01_a1b2c3 (PWR-01 4-Channel Switch)</option>
-                  <option value="dd_pwr02_d4e5f6">dd_pwr02_d4e5f6 (PWR-02 Stepped Fan Controller)</option>
-                  <option value="dd_hub01_u7v8w9">dd_hub01_u7v8w9 (HUB-01 Local Automation Hub)</option>
-                </select>
+                  onChange={setNewRuleDevice}
+                  options={[
+                    { value: 'dd_pwr03_g7h8i9', label: 'dd_pwr03_g7h8i9', badge: 'PWR-03', description: 'Heavy Appliance Switch' },
+                    { value: 'dd_wat01_j1k2l3', label: 'dd_wat01_j1k2l3', badge: 'WAT-01', description: 'Overhead Tank Controller' },
+                    { value: 'dd_pwr01_a1b2c3', label: 'dd_pwr01_a1b2c3', badge: 'PWR-01', description: '4-Channel Switch' },
+                    { value: 'dd_pwr02_d4e5f6', label: 'dd_pwr02_d4e5f6', badge: 'PWR-02', description: 'Stepped Fan Controller' },
+                    { value: 'dd_hub01_u7v8w9', label: 'dd_hub01_u7v8w9', badge: 'HUB-01', description: 'Local Automation Hub' },
+                  ]}
+                />
               </div>
             </div>
 
@@ -416,21 +417,22 @@ export const AutomationRulesEngine: React.FC<AutomationRulesEngineProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-slate-400">Operator</label>
-                  <select
+                  <label className="text-[10px] text-slate-400 block mb-1">Operator</label>
+                  <ThemedSelect
+                    ariaLabel="Trigger operator"
                     value={newRuleTriggerOp}
-                    onChange={(e) =>
-                      setNewRuleTriggerOp(e.target.value as '<' | '<=' | '>' | '>=' | '==' | '!=')
+                    onChange={(v) =>
+                      setNewRuleTriggerOp(v as '<' | '<=' | '>' | '>=' | '==' | '!=')
                     }
-                    className="w-full px-2.5 py-1.5 rounded border border-slate-700 bg-slate-900 text-xs text-slate-200 font-mono"
-                  >
-                    <option value=">">&gt; (Greater than)</option>
-                    <option value=">=">&gt;= (Greater/equal)</option>
-                    <option value="<">&lt; (Less than)</option>
-                    <option value="<=">&lt;= (Less/equal)</option>
-                    <option value="==">== (Equals)</option>
-                    <option value="!=">!= (Not equals)</option>
-                  </select>
+                    options={[
+                      { value: '>', label: '> (Greater than)' },
+                      { value: '>=', label: '>= (Greater/equal)' },
+                      { value: '<', label: '< (Less than)' },
+                      { value: '<=', label: '<= (Less/equal)' },
+                      { value: '==', label: '== (Equals)' },
+                      { value: '!=', label: '!= (Not equals)' },
+                    ]}
+                  />
                 </div>
 
                 <div>
@@ -444,15 +446,16 @@ export const AutomationRulesEngine: React.FC<AutomationRulesEngineProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-slate-400">Multi-Condition Logic</label>
-                  <select
+                  <label className="text-[10px] text-slate-400 block mb-1">Multi-Condition Logic</label>
+                  <ThemedSelect
+                    ariaLabel="Multi-Condition Logic"
                     value={newRuleLogic}
-                    onChange={(e) => setNewRuleLogic(e.target.value as 'AND' | 'OR')}
-                    className="w-full px-2.5 py-1.5 rounded border border-slate-700 bg-slate-900 text-xs text-slate-200 font-mono"
-                  >
-                    <option value="AND">AND (All match)</option>
-                    <option value="OR">OR (Flattened into parallel rules)</option>
-                  </select>
+                    onChange={(v) => setNewRuleLogic(v as 'AND' | 'OR')}
+                    options={[
+                      { value: 'AND', label: 'AND (All match)' },
+                      { value: 'OR', label: 'OR (Flattened parallel rules)' },
+                    ]}
+                  />
                 </div>
               </div>
             </div>
@@ -476,28 +479,25 @@ export const AutomationRulesEngine: React.FC<AutomationRulesEngineProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] text-slate-400">THEN State</label>
-                  <select
+                  <label className="text-[10px] text-slate-400 block mb-1">THEN State</label>
+                  <ThemedSelect
+                    ariaLabel="THEN State"
                     value={newRuleActionVal ? 'true' : 'false'}
-                    onChange={(e) => setNewRuleActionVal(e.target.value === 'true')}
-                    className="w-full px-2.5 py-1.5 rounded border border-slate-700 bg-slate-900 text-xs text-slate-200 font-mono"
-                  >
-                    <option value="false">Turn OFF (false)</option>
-                    <option value="true">Turn ON (true)</option>
-                  </select>
+                    onChange={(v) => setNewRuleActionVal(v === 'true')}
+                    options={[
+                      { value: 'false', label: 'Turn OFF (false)' },
+                      { value: 'true', label: 'Turn ON (true)' },
+                    ]}
+                  />
                 </div>
 
-                <div className="flex items-center gap-2 pt-4">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center pt-4">
+                  <ThemedCheckbox
                     id="hasElse"
                     checked={hasElseAction}
-                    onChange={(e) => setHasElseAction(e.target.checked)}
-                    className="w-4 h-4 rounded text-emerald-500 cursor-pointer"
+                    onChange={setHasElseAction}
+                    label="Generate Complementary ELSE rule"
                   />
-                  <label htmlFor="hasElse" className="text-[11px] text-slate-300 cursor-pointer">
-                    Generate Complementary ELSE rule
-                  </label>
                 </div>
               </div>
             </div>

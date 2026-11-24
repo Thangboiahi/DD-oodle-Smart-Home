@@ -10,12 +10,14 @@
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import {
   HomeLayout3D,
+  HomeLayout3DStructure,
   HomeTemplateId,
   Layout3DFloor,
   Layout3DPin,
   Layout3DPlacement,
   Layout3DRoom,
   Layout3DSurface,
+  StructuralElement,
 } from '@/lib/protocol/contract';
 import { VirtualDeviceInstance } from '@/lib/simulator/types';
 import {
@@ -24,6 +26,10 @@ import {
   HOME_ARCHITECTURE_BLUEPRINTS,
   HomeArchitectureBlueprint,
 } from '@/lib/twin/architectureBlueprints';
+import {
+  generateDefaultStructureFromBlueprint,
+  snapStructuralElementToGrid,
+} from '@/lib/twin/modularKit';
 import { HardwareArchetype, resolveHardwareArchetype } from '@/lib/twin/hardwareModelRegistry';
 import { auth, db } from '@/lib/firebase/client';
 
@@ -277,11 +283,49 @@ export function createLayout3DFromTemplate(
     placements,
   };
   layout.pins = syncLegacyPinsFromLayout(layout, devices);
+  const compiledForStructure = layout3DToBlueprint(layout, devices);
+  layout.structure = generateDefaultStructureFromBlueprint(compiledForStructure);
   return layout;
 }
 
 /**
- * Compiles any `HomeLayout3D` (legacy or Phase 10D custom) into a renderable `HomeArchitectureBlueprint`.
+ * Ensures any legacy or pre-12B `HomeLayout3D` has its template structures materialized
+ * into editable `structure.elements[]` so every floor, wall, door, window, fence, ground,
+ * and roof can be selected, moved, resized, rotated, or deleted in 3D Edit Mode.
+ */
+export function ensureMaterializedStructure(
+  layout: HomeLayout3D,
+  devices: Record<string, VirtualDeviceInstance>
+): HomeLayout3D {
+  if (layout.structure && Array.isArray(layout.structure.elements) && layout.structure.elements.length > 0) {
+    return layout;
+  }
+  const compiled = layout3DToBlueprint(layout, devices);
+  return {
+    ...layout,
+    structure: generateDefaultStructureFromBlueprint(compiled),
+  };
+}
+
+function sanitizeStructureElements(elements: StructuralElement[]): HomeLayout3DStructure {
+  const capped = elements.slice(0, 160);
+  const validIds = new Set(capped.map((e) => e.id));
+  const cleaned: StructuralElement[] = [];
+
+  for (const el of capped) {
+    if ((el.kind === 'door' || el.kind === 'window') && el.parentWallId && !validIds.has(el.parentWallId)) {
+      // If parent wall was deleted, keep only if it has valid standalone coordinates or skip orphaned template opening
+      const hasStandalonePos = Number.isFinite(el.x) && Number.isFinite(el.z);
+      if (!hasStandalonePos) continue;
+    }
+    const fixed = snapStructuralElementToGrid(el, capped, { naturalSnap: false });
+    if (fixed) cleaned.push(fixed);
+  }
+  return { elements: cleaned };
+}
+
+/**
+ * Compiles any `HomeLayout3D` (legacy, Phase 10D custom, or Phase 11A modular) into a renderable `HomeArchitectureBlueprint`.
  */
 export function layout3DToBlueprint(
   layout: HomeLayout3D,
@@ -292,10 +336,18 @@ export function layout3DToBlueprint(
 
   // Legacy layout_3d (only template_id + pins[])
   if (!layout.floors || layout.floors.length === 0 || !layout.rooms || layout.rooms.length === 0) {
-    return {
+    const legacyBp: HomeArchitectureBlueprint = {
       ...baseBp,
       pins: layout.pins.length > 0 ? layout.pins : baseBp.pins,
       placements: layout.placements,
+      appliances: layout.appliances,
+    };
+    return {
+      ...legacyBp,
+      structure:
+        layout.structure && Array.isArray(layout.structure.elements) && layout.structure.elements.length > 0
+          ? sanitizeStructureElements(layout.structure.elements)
+          : generateDefaultStructureFromBlueprint(legacyBp),
     };
   }
 
@@ -379,16 +431,25 @@ export function layout3DToBlueprint(
   const spanZ = Number.isFinite(minZ) ? maxZ - minZ : 8;
   const houseRadius = Math.max(6.2, Math.hypot(spanX, spanZ) * 0.72);
 
-  return {
+  const compiledBp: HomeArchitectureBlueprint = {
     templateId: layout.template_id,
     label: baseBp.label,
     floors,
     rooms,
     pins: syncLegacyPinsFromLayout(layout, devices),
     placements: layout.placements,
+    appliances: layout.appliances,
     houseRadius,
     centerX,
     centerZ,
+  };
+
+  return {
+    ...compiledBp,
+    structure:
+      layout.structure && Array.isArray(layout.structure.elements) && layout.structure.elements.length > 0
+        ? sanitizeStructureElements(layout.structure.elements)
+        : generateDefaultStructureFromBlueprint(compiledBp),
   };
 }
 
@@ -473,6 +534,12 @@ export async function saveHomeLayout3D(
     ...(layout.floors ? { floors: layout.floors.slice(0, 8) } : {}),
     ...(layout.rooms ? { rooms: layout.rooms.slice(0, 40) } : {}),
     ...(layout.placements ? { placements: layout.placements.slice(0, 64) } : {}),
+    ...(layout.structure && Array.isArray(layout.structure.elements)
+      ? { structure: { elements: layout.structure.elements.slice(0, 160) } }
+      : {}),
+    ...(Array.isArray(layout.appliances)
+      ? { appliances: layout.appliances.slice(0, 64) }
+      : {}),
   };
 
   let savedLocal = false;

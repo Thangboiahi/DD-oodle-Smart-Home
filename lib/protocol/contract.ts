@@ -497,6 +497,106 @@ export type HomeTemplateId = '1bhk' | '2bhk' | '3bhk' | 'duplex' | 'compact';
 
 export type Layout3DSurface = 'north' | 'south' | 'east' | 'west' | 'ceiling' | 'floor';
 
+export type SurfaceTagType =
+  | 'ground'
+  | 'floor'
+  | 'wall'
+  | 'ceiling'
+  | 'roof'
+  | 'door'
+  | 'window';
+
+export type StructuralElementKind =
+  | 'ground'
+  | 'fence'
+  | 'floor'
+  | 'wall'
+  | 'window'
+  | 'door'
+  | 'roof';
+
+export type GroundMaterialVariant = 'courtyard_lawn' | 'concrete_driveway';
+export type FenceVariant = 'boundary_fence' | 'main_gate';
+export type FloorSlabVariant = 'marble' | 'wood' | 'tile' | 'concrete_slab';
+export type WallVariant = 'solid_wall' | 'parapet' | 'pillar';
+export type WindowVariant = 'casement' | 'sliding_glass';
+export type DoorVariant = 'hinged_single' | 'double_entry';
+export type RoofVariant = 'rcc_terrace' | 'sloped_roof' | 'canopy';
+
+export type StructuralElementVariant =
+  | GroundMaterialVariant
+  | FenceVariant
+  | FloorSlabVariant
+  | WallVariant
+  | WindowVariant
+  | DoorVariant
+  | RoofVariant;
+
+export interface StructuralElement {
+  id: string;
+  kind: StructuralElementKind;
+  variant: StructuralElementVariant;
+  floorId: string;
+  roomId?: string;
+  /** 0.5m grid-snapped center X (m) */
+  x: number;
+  /** 0.5m grid-snapped center Z (m) */
+  z: number;
+  /** Elevation offset from floor base (m) */
+  y?: number;
+  /** Width / span (m) */
+  w: number;
+  /** Depth / thickness (m) */
+  d: number;
+  /** Height (m) */
+  h: number;
+  /** Yaw rotation in degrees (0, 90, 180, 270) */
+  rotationDeg: number;
+  /** Required parent wall element ID when kind is 'window' or 'door' */
+  parentWallId?: string;
+  /** Normalized offset along parent wall (-0.42 .. 0.42) */
+  wallOffsetRatio?: number;
+  /** Optional cardinal side hint for cutaway grouping */
+  wallSide?: 'north' | 'south' | 'east' | 'west';
+  /** Optional material color tint hex */
+  tint?: string | null;
+}
+
+export type PhysicalApplianceKind =
+  | 'ceiling_light'
+  | 'dimmer_light'
+  | 'ceiling_fan'
+  | 'wall_fan'
+  | 'geyser'
+  | 'ac'
+  | 'exhaust'
+  | 'water_tank';
+
+export interface Layout3DAppliance {
+  id: string;
+  kind: PhysicalApplianceKind;
+  label: string;
+  room_id: string;
+  floor_id: string;
+  surface: Layout3DSurface;
+  /** Normalized offset along wall (-0.42..0.42) or local X offset (m) on floor/ceiling */
+  offset_along: number;
+  /** Local Z offset (m) when placed on floor/ground/roof/ceiling */
+  offset_z?: number;
+  /** Height above floor slab (m) */
+  elevation_m: number;
+  /** Discrete 90-degree yaw rotation */
+  rotation_deg: number;
+  /** Bound real device ID from home devices */
+  linked_device_id?: string | null;
+  /** Bound capability key on the real device (e.g. ch1, spd, sw, pump) */
+  linked_channel_key?: string | null;
+}
+
+export interface HomeLayout3DStructure {
+  elements: StructuralElement[];
+}
+
 export interface Layout3DFloor {
   id: string;
   label: string;
@@ -557,6 +657,10 @@ export interface HomeLayout3D {
   floors?: Layout3DFloor[];
   rooms?: Layout3DRoom[];
   placements?: Layout3DPlacement[];
+  /** Phase 11A optional modular structural kit elements (backward-compatible) */
+  structure?: HomeLayout3DStructure;
+  /** Phase 11C optional physical appliances linked to real device channels (backward-compatible) */
+  appliances?: Layout3DAppliance[];
 }
 
 export interface VehicleGeofence {

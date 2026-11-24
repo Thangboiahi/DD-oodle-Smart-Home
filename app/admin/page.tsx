@@ -61,6 +61,7 @@ import {
   CardTitle,
   Dropdown,
   SegmentedControl,
+  ThemedCheckbox,
   useToast,
 } from '@/components/ui';
 import {
@@ -971,23 +972,16 @@ export default function AdminInstallerPortal() {
                   desc: 'Unsigned or mismatched SHA-256 binaries are rejected by bootloader.',
                 },
               ].map((chk) => (
-                <label
+                <ThemedCheckbox
                   key={chk.key}
-                  className="flex items-start gap-2.5 rounded-[var(--dd-radius-control)] hairline-border bg-surface-elevated p-3 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={otaPreflight[chk.key]}
-                    onChange={(e) =>
-                      setOtaPreflight((prev) => ({ ...prev, [chk.key]: e.target.checked }))
-                    }
-                    className="mt-0.5"
-                  />
-                  <div>
-                    <div className="font-semibold text-foreground">{chk.title}</div>
-                    <div className="text-[11px] text-foreground-muted mt-0.5">{chk.desc}</div>
-                  </div>
-                </label>
+                  variant="card"
+                  checked={otaPreflight[chk.key]}
+                  onChange={(checked) =>
+                    setOtaPreflight((prev) => ({ ...prev, [chk.key]: checked }))
+                  }
+                  label={chk.title}
+                  description={chk.desc}
+                />
               ))}
 
               {otaDispatchedPayload && (

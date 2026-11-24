@@ -27,26 +27,36 @@ import {
 import {
   HomeLayout3D,
   HomeTemplateId,
+  Layout3DAppliance,
   Layout3DPlacement,
+  Layout3DSurface,
   LevelCapability,
+  PhysicalApplianceKind,
+  StructuralElement,
+  StructuralElementKind,
+  SurfaceTagType,
 } from '@/lib/protocol/contract';
 import { ResolvedEntitlements } from '@/lib/entitlements/resolver';
 import { VirtualDeviceInstance } from '@/lib/simulator/types';
 import { useWorkspace } from '@/components/workspace/WorkspaceProvider';
 import {
+  ArchitecturalRoomSpec,
   FloorFilter,
   getFloorForRoom,
 } from '@/lib/twin/architectureBlueprints';
 import {
   BuiltArchitectureScene,
   SnapSurfaceUserData,
+  StructuralSurfaceUserData,
   buildHomeArchitecture,
 } from '@/lib/twin/architectureMeshBuilder';
+import { ApplianceControlUserData } from '@/lib/twin/applianceMeshBuilder';
 import { HardwareControlUserData } from '@/lib/twin/hardwareModelRegistry';
 import { CameraMode, Home3DCameraController } from '@/lib/twin/cameraController';
 import {
   clampNumber,
   createLayout3DFromTemplate,
+  ensureMaterializedStructure,
   fetchFirestoreLayout3D,
   layout3DToBlueprint,
   loadLocalLayout3D,
@@ -54,9 +64,22 @@ import {
   snapToHalfMeter,
 } from '@/lib/twin/layout3DStore';
 import {
+  MODULAR_BLOCK_CATALOG,
+  PHYSICAL_APPLIANCES_CATALOG,
+  generateDefaultStructureFromBlueprint,
+  getNaturalApplianceMountSpec,
+  getNaturalDeviceMountSpec,
+  isSurfaceValidForAppliance,
+  isSurfaceValidForDevice,
+  snapGridHalfMeter,
+  snapOpeningToWall,
+  snapWallEndpointsMagnetic,
+} from '@/lib/twin/modularKit';
+import {
   CustomizerTab,
   Home3DCustomizerTray,
 } from '@/components/twin/Home3DCustomizerTray';
+import { PrecisionSlider } from '@/components/ui/PrecisionSlider';
 import { cn } from '@/lib/utils';
 
 export interface Home3DTwinViewProps {
@@ -83,6 +106,10 @@ const _dragHitLocal = new THREE.Vector3();
 const _sliderWorldNormal = new THREE.Vector3();
 const _sliderWorldOrigin = new THREE.Vector3();
 const _snapLocal = new THREE.Vector3();
+const _faceNormal = new THREE.Vector3();
+const _selBox = new THREE.Box3();
+const _selSize = new THREE.Vector3();
+const _selCenter = new THREE.Vector3();
 
 function detectSoftwareWebGL(): boolean {
   if (typeof window === 'undefined') return false;
@@ -155,7 +182,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
   const [layout3D, setLayout3D] = useState<HomeLayout3D>(() => {
     const local = loadLocalLayout3D(resolvedHomeId);
     if (local && local.floors && local.floors.length > 0 && local.rooms && local.rooms.length > 0) {
-      return local;
+      return ensureMaterializedStructure(local, devices);
     }
     return createLayout3DFromTemplate(local?.template_id ?? initialTemplate, devices);
   });
@@ -175,15 +202,22 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [usingCssFullscreen, setUsingCssFullscreen] = useState<boolean>(false);
 
-  // Owner & Admin 3D Customizer Mode State
+  // Owner & Admin 3D Customizer Mode State (Phase 11C + 12B Modular Studio)
   const [customizeMode, setCustomizeMode] = useState<boolean>(
     defaultCustomizeOpen && allowCustomize
   );
-  const [customizerTab, setCustomizerTab] = useState<CustomizerTab>('rooms');
+  const [naturalSnap, setNaturalSnap] = useState<boolean>(true);
+  const [customizerTab, setCustomizerTab] = useState<CustomizerTab>('build');
   const [trayCollapsed, setTrayCollapsed] = useState<boolean>(false);
+  const [activeBuildFloorId, setActiveBuildFloorId] = useState<string>('gf');
   const [selectedEditRoomId, setSelectedEditRoomId] = useState<string | null>(null);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [pendingBuildKind, setPendingBuildKind] = useState<StructuralElementKind | null>(null);
   const [selectedPlacementDeviceId, setSelectedPlacementDeviceId] = useState<string | null>(null);
   const [snapTargetDeviceId, setSnapTargetDeviceId] = useState<string | null>(null);
+  const [selectedApplianceId, setSelectedApplianceId] = useState<string | null>(null);
+  const [pendingApplianceKind, setPendingApplianceKind] = useState<PhysicalApplianceKind | null>(null);
+  const [xrayWiring, setXrayWiring] = useState<boolean>(false);
 
   // Active focus state + optional collapsible tiny touch-fallback drawer
   const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
@@ -196,10 +230,38 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
   const [openMenu, setOpenMenu] = useState<'floor' | 'camera' | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
 
-  // Compile renderable architectural blueprint from live HomeLayout3D
+  // Keep latest devices ref synced before structural roster checks
+  useEffect(() => {
+    devicesRef.current = devices;
+  }, [devices]);
+
+  // Structural device roster key: changes ONLY when devices are added/removed/reassigned,
+  // NEVER on 1-second telemetry/state ticks (prevents roof & scene geometry rebuild twitching).
+  const deviceRosterKey = useMemo(
+    () =>
+      Object.values(devices)
+        .map((d) => `${d.device_id}:${d.module_code}:${d.room_id}`)
+        .sort()
+        .join('|'),
+    [devices]
+  );
+
+  const [structuralDevices, setStructuralDevices] = useState<
+    Record<string, VirtualDeviceInstance>
+  >(() => devices);
+  const prevRosterKeyRef = useRef<string>(deviceRosterKey);
+
+  useEffect(() => {
+    if (prevRosterKeyRef.current !== deviceRosterKey) {
+      prevRosterKeyRef.current = deviceRosterKey;
+      setStructuralDevices(devicesRef.current);
+    }
+  }, [deviceRosterKey]);
+
+  // Compile renderable architectural blueprint ONLY when layout3D or device roster changes
   const blueprint = useMemo(
-    () => layout3DToBlueprint(layout3D, devices),
-    [layout3D, devices]
+    () => layout3DToBlueprint(layout3D, structuralDevices),
+    [layout3D, structuralDevices]
   );
 
   // Derived active floor filter (avoids synchronous setState-in-effect when template floors change)
@@ -208,14 +270,26 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       ? 'all'
       : activeFloor;
 
+  const effectiveBuildFloorId: string =
+    blueprint.floors.some((f) => f.id === activeBuildFloorId)
+      ? activeBuildFloorId
+      : blueprint.floors[0]?.id ?? 'gf';
+
   // Mutable refs mirrored for the animation loop & pointer handlers
   const blueprintRef = useRef(blueprint);
   const activeFloorRef = useRef<FloorFilter>(effectiveActiveFloor);
+  const activeBuildFloorIdRef = useRef<string>(effectiveBuildFloorId);
+  const customizerTabRef = useRef<CustomizerTab>(customizerTab);
   const autoCutawayRef = useRef<boolean>(autoCutaway);
   const showRoomLabelsRef = useRef<boolean>(showRoomLabels);
   const selectedDeviceIdRef = useRef<string | null>(selectedDeviceId);
   const customizeModeRef = useRef<boolean>(customizeMode);
+  const naturalSnapRef = useRef<boolean>(naturalSnap);
+  const selectedElementIdRef = useRef<string | null>(selectedElementId);
+  const selectionBoxRef = useRef<THREE.LineSegments | null>(null);
   const snapTargetDeviceIdRef = useRef<string | null>(snapTargetDeviceId);
+  const pendingBuildKindRef = useRef<StructuralElementKind | null>(pendingBuildKind);
+  const pendingApplianceKindRef = useRef<PhysicalApplianceKind | null>(pendingApplianceKind);
   const lowFpsDismissedRef = useRef<boolean>(lowFpsDismissed);
   const lastSnappedTemplateRef = useRef<string | null>(null);
 
@@ -249,6 +323,14 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
   }, [effectiveActiveFloor]);
 
   useEffect(() => {
+    activeBuildFloorIdRef.current = effectiveBuildFloorId;
+  }, [effectiveBuildFloorId]);
+
+  useEffect(() => {
+    customizerTabRef.current = customizerTab;
+  }, [customizerTab]);
+
+  useEffect(() => {
     autoCutawayRef.current = autoCutaway;
   }, [autoCutaway]);
 
@@ -265,8 +347,24 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
   }, [customizeMode]);
 
   useEffect(() => {
+    naturalSnapRef.current = naturalSnap;
+  }, [naturalSnap]);
+
+  useEffect(() => {
+    selectedElementIdRef.current = selectedElementId;
+  }, [selectedElementId]);
+
+  useEffect(() => {
     snapTargetDeviceIdRef.current = snapTargetDeviceId;
   }, [snapTargetDeviceId]);
+
+  useEffect(() => {
+    pendingBuildKindRef.current = pendingBuildKind;
+  }, [pendingBuildKind]);
+
+  useEffect(() => {
+    pendingApplianceKindRef.current = pendingApplianceKind;
+  }, [pendingApplianceKind]);
 
   useEffect(() => {
     lowFpsDismissedRef.current = lowFpsDismissed;
@@ -280,6 +378,80 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
     onSendCommandRef.current = onSendCommand;
   }, [onSendCommand]);
 
+  const syncSelectionOutline = useCallback(() => {
+    const helper = selectionBoxRef.current;
+    const arch = archRef.current;
+    const scene = sceneRef.current;
+    const selId = selectedElementIdRef.current;
+    if (!helper) return;
+
+    if (!customizeModeRef.current || !selId || !arch || !scene) {
+      helper.visible = false;
+      return;
+    }
+
+    const objs = arch.elementGroups.get(selId);
+    if (!objs || objs.length === 0) {
+      helper.visible = false;
+      return;
+    }
+
+    scene.updateMatrixWorld(true);
+    _selBox.makeEmpty();
+    for (const obj of objs) {
+      _selBox.expandByObject(obj);
+    }
+    if (_selBox.isEmpty()) {
+      helper.visible = false;
+      return;
+    }
+    _selBox.getSize(_selSize);
+    _selBox.getCenter(_selCenter);
+    helper.position.copy(_selCenter);
+    helper.scale.set(
+      Math.max(0.18, _selSize.x + 0.08),
+      Math.max(0.12, _selSize.y + 0.08),
+      Math.max(0.18, _selSize.z + 0.08)
+    );
+    helper.visible = true;
+  }, []);
+
+  const syncSelectionOutlineRef = useRef(syncSelectionOutline);
+  useEffect(() => {
+    syncSelectionOutlineRef.current = syncSelectionOutline;
+  }, [syncSelectionOutline]);
+
+  useEffect(() => {
+    syncSelectionOutline();
+  }, [selectedElementId, customizeMode, ecoMode, blueprint, syncSelectionOutline]);
+
+  const previewElementInScene = useCallback(
+    (elementId: string, patch: Partial<StructuralElement>) => {
+      const arch = archRef.current;
+      if (!arch) return;
+      const spec = arch.elementSpecs.get(elementId);
+      const objs = arch.elementGroups.get(elementId);
+      if (!spec || !objs || objs.length === 0) return;
+      const floorEntry = arch.floors.find((f) => f.spec.id === spec.floorId);
+      if (!floorEntry) return;
+
+      const topObj = [...objs].reverse().find((o) => o.parent === floorEntry.group);
+      if (!topObj) return;
+
+      if (patch.x !== undefined) topObj.position.x = patch.x;
+      if (patch.z !== undefined) topObj.position.z = patch.z;
+      if (patch.y !== undefined) {
+        const isCenteredGeom = spec.kind === 'ground' || (spec.kind === 'wall' && spec.variant === 'pillar');
+        topObj.position.y = isCenteredGeom ? patch.y + Math.max(0.016, spec.h) / 2 : patch.y;
+      }
+      if (patch.rotationDeg !== undefined) {
+        topObj.rotation.y = THREE.MathUtils.degToRad(patch.rotationDeg);
+      }
+      syncSelectionOutline();
+    },
+    [syncSelectionOutline]
+  );
+
   // Hydrate saved layout from localStorage / Firestore when homeId changes + cross-page sync
   useEffect(() => {
     let active = true;
@@ -288,7 +460,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       if (!active) return;
       const local = loadLocalLayout3D(resolvedHomeId);
       if (local && local.floors && local.floors.length > 0 && local.rooms && local.rooms.length > 0) {
-        setLayout3D(local);
+        setLayout3D(ensureMaterializedStructure(local, devicesRef.current));
         setIsDirty(false);
       }
 
@@ -296,7 +468,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       if (!active || !cloud) return;
       const hydrated =
         cloud.floors && cloud.floors.length > 0 && cloud.rooms && cloud.rooms.length > 0
-          ? cloud
+          ? ensureMaterializedStructure(cloud, devicesRef.current)
           : createLayout3DFromTemplate(cloud.template_id, devicesRef.current, cloud.eco_fallback);
       setLayout3D(hydrated);
       setIsDirty(false);
@@ -305,7 +477,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
     const onSyncEvent = (ev: Event) => {
       const detail = (ev as CustomEvent<{ homeId: string; layout: HomeLayout3D }>).detail;
       if (detail?.homeId === resolvedHomeId && detail.layout) {
-        setLayout3D(detail.layout);
+        setLayout3D(ensureMaterializedStructure(detail.layout, devicesRef.current));
         setIsDirty(false);
       }
     };
@@ -456,8 +628,11 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (snapTargetDeviceId) {
+        if (pendingBuildKind || snapTargetDeviceId || pendingApplianceKind) {
+          setPendingBuildKind(null);
           setSnapTargetDeviceId(null);
+          setPendingApplianceKind(null);
+          setTrayCollapsed(false);
         } else if (openMenu) {
           setOpenMenu(null);
         } else if (isFullscreen) {
@@ -471,7 +646,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       document.removeEventListener('fullscreenchange', onFsChange);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [isFullscreen, usingCssFullscreen, openMenu, snapTargetDeviceId, exitFullscreen]);
+  }, [isFullscreen, usingCssFullscreen, openMenu, snapTargetDeviceId, pendingBuildKind, pendingApplianceKind, exitFullscreen]);
 
   // Smooth Camera Focus Actions
   const focusRoom = useCallback((roomId: string) => {
@@ -697,15 +872,65 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
 
     // Auto-minimize customizer tray whenever the user starts orbiting/panning in Customize 3D mode
     const onOrbitStart = () => {
-      if (customizeModeRef.current && !snapTargetDeviceIdRef.current) {
+      if (
+        customizeModeRef.current &&
+        !snapTargetDeviceIdRef.current &&
+        !pendingBuildKindRef.current &&
+        !pendingApplianceKindRef.current
+      ) {
         setTrayCollapsed(true);
       }
     };
     controller.controls.addEventListener('start', onOrbitStart);
 
-    // 8. Direct 3D Hardware Interaction & Tap-to-Snap Surface Raycasting
+    // 7B. Green / Red Surface-Snap Ghost Preview Mesh (Zero GC allocations during hover)
+    const ghostGroup = new THREE.Group();
+    ghostGroup.visible = false;
+    const ghostBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const ghostBoxMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+    });
+    const ghostBoxMesh = new THREE.Mesh(ghostBoxGeo, ghostBoxMat);
+    ghostGroup.add(ghostBoxMesh);
+
+    const ghostRingGeo = new THREE.RingGeometry(0.22, 0.28, 24);
+    const ghostRingMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+    const ghostRingMesh = new THREE.Mesh(ghostRingGeo, ghostRingMat);
+    ghostGroup.add(ghostRingMesh);
+    scene.add(ghostGroup);
+
+    // 7C. Glowing Selection Wireframe Outline for ANY Selected Structural Element
+    const selUnitGeo = new THREE.BoxGeometry(1, 1, 1);
+    const selEdgesGeo = new THREE.EdgesGeometry(selUnitGeo);
+    selUnitGeo.dispose();
+    const selEdgesMat = new THREE.LineBasicMaterial({
+      color: resolvedLightMode ? 0x0284c7 : 0x38bdf8,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+    });
+    const selectionBox = new THREE.LineSegments(selEdgesGeo, selEdgesMat);
+    selectionBox.visible = false;
+    selectionBox.renderOrder = 999;
+    scene.add(selectionBox);
+    selectionBoxRef.current = selectionBox;
+
+    // 8. Direct 3D Hardware Interaction, Direct Element Dragging & Tap-to-Snap Raycasting
     const raycaster = new THREE.Raycaster();
     const pointerNdc = new THREE.Vector2();
+    const _buildFloorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const _buildPlaneHit = new THREE.Vector3();
+    const _ghostNormalVec = new THREE.Vector3();
+    const _ghostUp = new THREE.Vector3(0, 0, 1);
     let downX = 0;
     let downY = 0;
     let lastHoverCheckMs = 0;
@@ -722,6 +947,22 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       lastEmitMs: number;
     }
     let activeSliderDrag: ActiveSliderDrag | null = null;
+
+    interface ActiveElementDrag {
+      element: StructuralElement;
+      floorId: string;
+      targetObj: THREE.Object3D | null;
+      isWallOpening: boolean;
+      parentWall: StructuralElement | null;
+      baseObjY: number;
+      hitOffsetX: number;
+      hitOffsetZ: number;
+      curX: number;
+      curZ: number;
+      curRatio: number;
+      hasMoved: boolean;
+    }
+    let activeElementDrag: ActiveElementDrag | null = null;
 
     const setPointerNdcFromEvent = (ev: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -747,11 +988,305 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       );
     };
 
-    const getVisibleSnapSurfaceMeshes = () => {
+    const getVisibleStructuralMeshes = () => {
       if (!archRef.current) return [];
-      return archRef.current.snapSurfaceMeshes.filter((mesh) =>
+      return archRef.current.structuralMeshes.filter((mesh) =>
         isFloorVisibleNow(String(mesh.userData.floorId ?? ''))
       );
+    };
+
+    const getSelectableStructuralMeshes = () => {
+      if (!archRef.current) return [];
+      return archRef.current.structuralMeshes.filter(
+        (mesh) =>
+          isFloorVisibleNow(String(mesh.userData.floorId ?? '')) &&
+          mesh.userData.kind !== 'snap_surface' &&
+          mesh.userData.surfaceType !== 'ceiling'
+      );
+    };
+
+    const getVisibleApplianceMeshes = () => {
+      if (!archRef.current) return [];
+      return archRef.current.applianceInteractiveMeshes.filter((mesh) =>
+        isFloorVisibleNow(String(mesh.userData.floorId ?? ''))
+      );
+    };
+
+    const findBestRoomForPoint = (
+      floorId: string,
+      localX: number,
+      localZ: number,
+      preferredRoomId?: string | null
+    ): ArchitecturalRoomSpec | undefined => {
+      const bp = blueprintRef.current;
+      if (preferredRoomId) {
+        const direct = bp.rooms.find((r) => r.id === preferredRoomId);
+        if (direct) return direct;
+      }
+      const floorRooms = bp.rooms.filter((r) => r.floorId === floorId);
+      const containing = floorRooms.find(
+        (r) => Math.abs(localX - r.x) <= r.w / 2 + 0.25 && Math.abs(localZ - r.z) <= r.d / 2 + 0.25
+      );
+      if (containing) return containing;
+      let nearest = floorRooms[0] ?? bp.rooms[0];
+      let bestDist = Infinity;
+      for (const r of bp.rooms) {
+        const d = Math.hypot(localX - r.x, localZ - r.z) + (r.floorId === floorId ? 0 : 12);
+        if (d < bestDist) {
+          bestDist = d;
+          nearest = r;
+        }
+      }
+      return nearest;
+    };
+
+    const getHitNormalTuple = (
+      hit: THREE.Intersection,
+      meta: Partial<StructuralSurfaceUserData>
+    ): [number, number, number] => {
+      const snapMeta = hit.object.userData as Partial<SnapSurfaceUserData>;
+      if (snapMeta.kind !== 'snap_surface' && hit.face) {
+        _faceNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).normalize();
+        if (_faceNormal.lengthSq() > 0.1) {
+          return [_faceNormal.x, _faceNormal.y, _faceNormal.z];
+        }
+      }
+      return meta.normal ?? [0, 1, 0];
+    };
+
+    const resolveSurfacePlacementCoords = (
+      hit: THREE.Intersection,
+      meta: StructuralSurfaceUserData,
+      room: ArchitecturalRoomSpec,
+      slabTopY: number,
+      roomWallH: number,
+      defaultFloorElev: number,
+      useNaturalSnap: boolean
+    ): { surface: Layout3DSurface; offsetAlong: number; offsetZ: number; elevationM: number } => {
+      const floorEntry = archRef.current?.floors.find((f) => f.spec.id === room.floorId);
+      _snapLocal.copy(hit.point);
+      if (floorEntry) {
+        floorEntry.group.worldToLocal(_snapLocal);
+      }
+
+      const snapMeta = hit.object.userData as Partial<SnapSurfaceUserData>;
+      let surface: Layout3DSurface = snapMeta.surface ?? 'floor';
+      const [nx, , nz] = getHitNormalTuple(hit, meta);
+
+      if (meta.surfaceType === 'ceiling') {
+        surface = 'ceiling';
+      } else if (meta.surfaceType === 'wall' || meta.surfaceType === 'window' || meta.surfaceType === 'door') {
+        if (snapMeta.kind === 'snap_surface' && snapMeta.surface) {
+          surface = snapMeta.surface;
+        } else if (Math.abs(nx) >= Math.abs(nz)) {
+          surface = nx >= 0 ? 'east' : 'west';
+        } else {
+          surface = nz >= 0 ? 'south' : 'north';
+        }
+      } else {
+        surface = 'floor';
+      }
+
+      if (surface === 'north' || surface === 'south') {
+        return {
+          surface,
+          offsetAlong: clampNumber((_snapLocal.x - room.x) / Math.max(1, room.w), -0.44, 0.44),
+          offsetZ: 0,
+          elevationM: clampNumber(_snapLocal.y - slabTopY, 0.2, Math.max(0.6, roomWallH - 0.18)),
+        };
+      }
+      if (surface === 'east' || surface === 'west') {
+        return {
+          surface,
+          offsetAlong: clampNumber((_snapLocal.z - room.z) / Math.max(1, room.d), -0.44, 0.44),
+          offsetZ: 0,
+          elevationM: clampNumber(_snapLocal.y - slabTopY, 0.2, Math.max(0.6, roomWallH - 0.18)),
+        };
+      }
+      if (surface === 'ceiling') {
+        const rawX = clampNumber(_snapLocal.x - room.x, -room.w * 0.44, room.w * 0.44);
+        const rawZ = clampNumber(_snapLocal.z - room.z, -room.d * 0.44, room.d * 0.44);
+        const distToCenter = Math.hypot(rawX, rawZ);
+        if (useNaturalSnap) {
+          return {
+            surface: 'ceiling',
+            offsetAlong: distToCenter <= 1.25 ? 0 : snapToHalfMeter(rawX),
+            offsetZ: distToCenter <= 1.25 ? 0 : snapToHalfMeter(rawZ),
+            elevationM: Math.max(0.8, roomWallH - 0.06),
+          };
+        }
+        return {
+          surface: 'ceiling',
+          offsetAlong: rawX,
+          offsetZ: rawZ,
+          elevationM: Math.max(0.8, roomWallH - 0.06),
+        };
+      }
+      const rawFX = clampNumber(_snapLocal.x - room.x, -room.w * 0.46, room.w * 0.46);
+      const rawFZ = clampNumber(_snapLocal.z - room.z, -room.d * 0.46, room.d * 0.46);
+      return {
+        surface: 'floor',
+        offsetAlong: useNaturalSnap ? snapToHalfMeter(rawFX) : rawFX,
+        offsetZ: useNaturalSnap ? snapToHalfMeter(rawFZ) : rawFZ,
+        elevationM: defaultFloorElev,
+      };
+    };
+
+    const updateGhostPreviewAtPointer = (ev: PointerEvent) => {
+      const pendingBuild = pendingBuildKindRef.current;
+      const pendingDeviceId = snapTargetDeviceIdRef.current;
+      const pendingApp = pendingApplianceKindRef.current;
+      const natSnap = naturalSnapRef.current;
+
+      if ((!pendingBuild && !pendingDeviceId && !pendingApp) || !archRef.current || !cameraRef.current) {
+        ghostGroup.visible = false;
+        return;
+      }
+
+      setPointerNdcFromEvent(ev);
+      raycaster.setFromCamera(pointerNdc, cameraRef.current);
+
+      if (pendingBuild) {
+        const preset = MODULAR_BLOCK_CATALOG.find((b) => b.kind === pendingBuild);
+        if (!preset) {
+          ghostGroup.visible = false;
+          return;
+        }
+        if (preset.requiresWall) {
+          const hits = raycaster.intersectObjects(getVisibleStructuralMeshes(), false);
+          if (hits.length === 0) {
+            ghostGroup.visible = false;
+            return;
+          }
+          const hit = hits[0];
+          const meta = hit.object.userData as Partial<StructuralSurfaceUserData>;
+          const isValid = meta.surfaceType === 'wall';
+          const colorHex = isValid ? 0x10b981 : 0xef4444;
+          ghostBoxMat.color.setHex(colorHex);
+          ghostRingMat.color.setHex(colorHex);
+          ghostBoxMesh.scale.set(preset.defaultW, preset.defaultH, 0.2);
+          ghostGroup.position.copy(hit.point);
+          if (natSnap && isValid && meta.elementId) {
+            const pWall = archRef.current.elementSpecs.get(meta.elementId);
+            const flEntry = archRef.current.floors.find((f) => f.spec.id === meta.floorId);
+            if (pWall && flEntry) {
+              const wallBaseWorld = flEntry.group.position.y + (pWall.y ?? flEntry.spec.slabThickness);
+              ghostGroup.position.y =
+                pendingBuild === 'door'
+                  ? wallBaseWorld + preset.defaultH / 2
+                  : wallBaseWorld + 1.0 + preset.defaultH / 2;
+            }
+          }
+          const norm = getHitNormalTuple(hit, meta);
+          _ghostNormalVec.set(norm[0], norm[1], norm[2]).normalize();
+          if (_ghostNormalVec.lengthSq() > 0.01) {
+            ghostGroup.quaternion.setFromUnitVectors(_ghostUp, _ghostNormalVec);
+          }
+          ghostGroup.visible = true;
+          return;
+        }
+
+        const bp = blueprintRef.current;
+        const targetFl =
+          bp.floors.find((f) => f.id === activeBuildFloorIdRef.current) ?? bp.floors[0];
+        const planeY = targetFl ? targetFl.baseY + (pendingBuild === 'ground' ? 0 : targetFl.slabThickness) : 0;
+        _buildFloorPlane.constant = -planeY;
+        if (raycaster.ray.intersectPlane(_buildFloorPlane, _buildPlaneHit)) {
+          ghostBoxMat.color.setHex(0x10b981);
+          ghostRingMat.color.setHex(0x10b981);
+          ghostBoxMesh.scale.set(preset.defaultW, Math.max(0.08, preset.defaultH), preset.defaultD);
+          ghostGroup.quaternion.identity();
+          let gx = natSnap ? snapGridHalfMeter(_buildPlaneHit.x) : _buildPlaneHit.x;
+          let gz = natSnap ? snapGridHalfMeter(_buildPlaneHit.z) : _buildPlaneHit.z;
+          if (natSnap && (pendingBuild === 'wall' || pendingBuild === 'fence')) {
+            const mag = snapWallEndpointsMagnetic(
+              {
+                id: '__ghost__',
+                kind: pendingBuild,
+                variant: preset.defaultVariant,
+                floorId: targetFl?.id ?? 'gf',
+                x: gx,
+                z: gz,
+                w: preset.defaultW,
+                d: preset.defaultD,
+                h: preset.defaultH,
+                rotationDeg: 0,
+              },
+              bp.structure?.elements ?? [],
+              0.25
+            );
+            gx = mag.x;
+            gz = mag.z;
+          }
+          ghostGroup.position.set(gx, planeY + Math.max(0.08, preset.defaultH) / 2, gz);
+          ghostGroup.visible = true;
+        } else {
+          ghostGroup.visible = false;
+        }
+        return;
+      }
+
+      // Device Snap or Physical Appliance Snap (Green = valid surface, Red = invalid surface)
+      const hits = raycaster.intersectObjects(getVisibleStructuralMeshes(), false);
+      if (hits.length === 0) {
+        ghostGroup.visible = false;
+        return;
+      }
+      const hit = hits[0];
+      const meta = hit.object.userData as Partial<StructuralSurfaceUserData>;
+      const surfType: SurfaceTagType = meta.surfaceType ?? 'floor';
+      const floorId = meta.floorId ?? 'gf';
+      const room = findBestRoomForPoint(floorId, hit.point.x, hit.point.z, meta.roomId);
+      const flEntry = archRef.current.floors.find((f) => f.spec.id === floorId);
+      const slabWorldTopY = (flEntry?.group.position.y ?? 0) + (flEntry?.spec.slabThickness ?? 0.18);
+      const roomWallH = room?.wallHeight ?? flEntry?.spec.wallHeight ?? 2.65;
+
+      let valid = false;
+      if (pendingDeviceId) {
+        const dev = devicesRef.current[pendingDeviceId];
+        if (dev) {
+          valid = isSurfaceValidForDevice(dev, surfType, room?.floorType ?? null, floorId).valid;
+        }
+      } else if (pendingApp) {
+        valid = isSurfaceValidForAppliance(pendingApp, surfType, room?.floorType ?? null, floorId).valid;
+      }
+
+      const colorHex = valid ? 0x10b981 : 0xef4444;
+      ghostBoxMat.color.setHex(colorHex);
+      ghostRingMat.color.setHex(colorHex);
+      ghostBoxMesh.scale.set(0.38, 0.24, 0.14);
+      ghostGroup.position.copy(hit.point);
+
+      if (natSnap && valid && room) {
+        if (pendingDeviceId) {
+          const dev = devicesRef.current[pendingDeviceId];
+          if (dev) {
+            const natSpec = getNaturalDeviceMountSpec(dev, surfType, hit.point.y - slabWorldTopY);
+            if (surfType === 'wall') {
+              ghostGroup.position.y = slabWorldTopY + natSpec.elevationM;
+            }
+          }
+        } else if (pendingApp) {
+          const natApp = getNaturalApplianceMountSpec(pendingApp, roomWallH);
+          if (surfType === 'ceiling' && natApp.snapRoomCenterThresholdM > 0) {
+            const distCenter = Math.hypot(hit.point.x - room.x, hit.point.z - room.z);
+            if (distCenter <= natApp.snapRoomCenterThresholdM) {
+              ghostGroup.position.x = room.x;
+              ghostGroup.position.z = room.z;
+            }
+          } else if (surfType === 'wall') {
+            ghostGroup.position.y = slabWorldTopY + natApp.elevationM;
+          }
+        }
+      }
+
+      const norm = getHitNormalTuple(hit, meta);
+      _ghostNormalVec.set(norm[0], norm[1], norm[2]).normalize();
+      if (_ghostNormalVec.lengthSq() > 0.01) {
+        ghostGroup.quaternion.setFromUnitVectors(_ghostUp, _ghostNormalVec);
+        ghostGroup.position.addScaledVector(_ghostNormalVec, 0.04);
+      }
+      ghostGroup.visible = true;
     };
 
     const computeSliderValueFromWorldPoint = (
@@ -782,63 +1317,174 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       downX = ev.clientX;
       downY = ev.clientY;
 
-      if (snapTargetDeviceIdRef.current) return;
+      if (snapTargetDeviceIdRef.current || pendingBuildKindRef.current || pendingApplianceKindRef.current) return;
       if (!archRef.current || !cameraRef.current) return;
 
       setPointerNdcFromEvent(ev);
       raycaster.setFromCamera(pointerNdc, cameraRef.current);
 
       const hits = raycaster.intersectObjects(getVisibleControlMeshes(), false);
-      if (hits.length === 0) return;
+      if (hits.length > 0) {
+        const hit = hits[0];
+        const meta = hit.object.userData as HardwareControlUserData | undefined;
+        if (meta && meta.controlKind === 'slider_track' && meta.capKey && selectedDeviceIdRef.current === meta.deviceId) {
+          const dev = devicesRef.current[meta.deviceId];
+          if (!dev) return;
 
-      const hit = hits[0];
-      const meta = hit.object.userData as HardwareControlUserData | undefined;
-      if (!meta || meta.controlKind !== 'slider_track' || !meta.capKey) return;
+          // G10 Latched Fault Hard Lockout
+          if (dev.state.fault !== null) {
+            showNoticeRef.current(
+              `G10 Locked (${dev.state.fault}) — Hold physical button 3s to reset`,
+              'danger'
+            );
+            return;
+          }
 
-      if (selectedDeviceIdRef.current !== meta.deviceId) return;
+          const model = archRef.current.hardwareModels.get(meta.deviceId);
+          if (!model) return;
 
-      const dev = devicesRef.current[meta.deviceId];
-      if (!dev) return;
+          _sliderWorldNormal.copy(model.frontNormal).normalize();
+          hit.object.getWorldPosition(_sliderWorldOrigin);
+          _dragPlane.setFromNormalAndCoplanarPoint(_sliderWorldNormal, _sliderWorldOrigin);
 
-      // G10 Latched Fault Hard Lockout
-      if (dev.state.fault !== null) {
-        showNoticeRef.current(
-          `G10 Locked (${dev.state.fault}) — Hold physical button 3s to reset`,
-          'danger'
-        );
-        return;
+          const drag: ActiveSliderDrag = {
+            deviceId: meta.deviceId,
+            capKey: meta.capKey,
+            mesh: hit.object as THREE.Mesh,
+            min: meta.sliderMin ?? 0,
+            max: meta.sliderMax ?? 100,
+            step: meta.sliderStep ?? 5,
+            trackLength: meta.trackLength ?? 0.2,
+            lastEmittedVal: Number(dev.state.state[meta.capKey] ?? 0),
+            lastEmitMs: 0,
+          };
+          activeSliderDrag = drag;
+          controller.setInteractionLocked(true);
+
+          const nextVal = computeSliderValueFromWorldPoint(drag, hit.point);
+          emitSliderValue(drag, nextVal, false);
+          return;
+        }
       }
 
-      const model = archRef.current.hardwareModels.get(meta.deviceId);
-      if (!model) return;
+      // Direct 3D Drag on Already-Selected Structural Element in Customize Mode
+      if (customizeModeRef.current && selectedElementIdRef.current && hits.length === 0) {
+        const appHits = raycaster.intersectObjects(getVisibleApplianceMeshes(), false);
+        if (appHits.length === 0) {
+          const sHits = raycaster.intersectObjects(getSelectableStructuralMeshes(), false);
+          const sHit = sHits[0];
+          const sMeta = sHit?.object.userData as Partial<StructuralSurfaceUserData> | undefined;
+          if (sHit && sMeta?.elementId === selectedElementIdRef.current) {
+            const spec = archRef.current.elementSpecs.get(sMeta.elementId);
+            const floorEntry = archRef.current.floors.find((f) => f.spec.id === sMeta.floorId);
+            if (spec && floorEntry) {
+              const isWallOpening = (spec.kind === 'door' || spec.kind === 'window') && Boolean(spec.parentWallId);
+              const parentWall = isWallOpening && spec.parentWallId
+                ? archRef.current.elementSpecs.get(spec.parentWallId) ?? null
+                : null;
+              const objs = archRef.current.elementGroups.get(spec.id) ?? [];
+              const targetObj = [...objs].reverse().find((o) => o.parent === floorEntry.group) ?? null;
 
-      _sliderWorldNormal.copy(model.frontNormal).normalize();
-      hit.object.getWorldPosition(_sliderWorldOrigin);
-      _dragPlane.setFromNormalAndCoplanarPoint(_sliderWorldNormal, _sliderWorldOrigin);
+              _snapLocal.copy(sHit.point);
+              floorEntry.group.worldToLocal(_snapLocal);
+              _dragPlane.set(new THREE.Vector3(0, 1, 0), -sHit.point.y);
 
-      const drag: ActiveSliderDrag = {
-        deviceId: meta.deviceId,
-        capKey: meta.capKey,
-        mesh: hit.object as THREE.Mesh,
-        min: meta.sliderMin ?? 0,
-        max: meta.sliderMax ?? 100,
-        step: meta.sliderStep ?? 5,
-        trackLength: meta.trackLength ?? 0.2,
-        lastEmittedVal: Number(dev.state.state[meta.capKey] ?? 0),
-        lastEmitMs: 0,
-      };
-      activeSliderDrag = drag;
-      controller.setInteractionLocked(true);
-
-      const nextVal = computeSliderValueFromWorldPoint(drag, hit.point);
-      emitSliderValue(drag, nextVal, false);
+              activeElementDrag = {
+                element: spec,
+                floorId: spec.floorId,
+                targetObj,
+                isWallOpening,
+                parentWall,
+                baseObjY: targetObj ? targetObj.position.y : spec.y ?? 0,
+                hitOffsetX: _snapLocal.x - spec.x,
+                hitOffsetZ: _snapLocal.z - spec.z,
+                curX: spec.x,
+                curZ: spec.z,
+                curRatio: spec.wallOffsetRatio ?? 0,
+                hasMoved: false,
+              };
+              controller.setInteractionLocked(true);
+              canvasEl.style.cursor = 'move';
+            }
+          }
+        }
+      }
     };
 
     const onPointerMove = (ev: PointerEvent) => {
       if (!archRef.current || !cameraRef.current) return;
 
-      if (snapTargetDeviceIdRef.current) {
+      if (
+        snapTargetDeviceIdRef.current ||
+        pendingBuildKindRef.current ||
+        pendingApplianceKindRef.current
+      ) {
         canvasEl.style.cursor = 'crosshair';
+        updateGhostPreviewAtPointer(ev);
+        return;
+      }
+      ghostGroup.visible = false;
+
+      if (activeElementDrag) {
+        setPointerNdcFromEvent(ev);
+        raycaster.setFromCamera(pointerNdc, cameraRef.current);
+        if (raycaster.ray.intersectPlane(_dragPlane, _dragHitWorld)) {
+          const flEntry = archRef.current.floors.find((f) => f.spec.id === activeElementDrag?.floorId);
+          _snapLocal.copy(_dragHitWorld);
+          if (flEntry) flEntry.group.worldToLocal(_snapLocal);
+
+          if (activeElementDrag.isWallOpening && activeElementDrag.parentWall) {
+            const pw = activeElementDrag.parentWall;
+            const rad = THREE.MathUtils.degToRad(pw.rotationDeg);
+            const alongX = Math.cos(rad);
+            const alongZ = -Math.sin(rad);
+            const proj = (_snapLocal.x - pw.x) * alongX + (_snapLocal.z - pw.z) * alongZ;
+            const maxRatio = Math.max(0, (pw.w - activeElementDrag.element.w) / (2 * Math.max(0.5, pw.w)) - 0.04);
+            const nextRatio = clampNumber(proj / Math.max(0.6, pw.w), -maxRatio, maxRatio);
+            if (Math.abs(nextRatio - activeElementDrag.curRatio) > 0.005) {
+              activeElementDrag.hasMoved = true;
+            }
+            activeElementDrag.curRatio = nextRatio;
+            ghostBoxMat.color.setHex(0x10b981);
+            ghostRingMat.color.setHex(0x10b981);
+            ghostBoxMesh.scale.set(
+              activeElementDrag.element.w,
+              activeElementDrag.element.h,
+              Math.max(0.22, pw.d + 0.08)
+            );
+            const offsetDist = nextRatio * pw.w;
+            const localX = pw.x + alongX * offsetDist;
+            const localZ = pw.z + alongZ * offsetDist;
+            const worldY = (flEntry?.group.position.y ?? 0) + (activeElementDrag.element.y ?? 0.18) + activeElementDrag.element.h / 2;
+            ghostGroup.position.set(localX, worldY, localZ);
+            ghostGroup.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rad);
+            ghostGroup.visible = true;
+          } else {
+            const rawX = _snapLocal.x - activeElementDrag.hitOffsetX;
+            const rawZ = _snapLocal.z - activeElementDrag.hitOffsetZ;
+            let nextX = naturalSnapRef.current ? snapGridHalfMeter(rawX) : Number(rawX.toFixed(2));
+            let nextZ = naturalSnapRef.current ? snapGridHalfMeter(rawZ) : Number(rawZ.toFixed(2));
+            if (naturalSnapRef.current) {
+              const mag = snapWallEndpointsMagnetic(
+                { ...activeElementDrag.element, x: nextX, z: nextZ },
+                blueprintRef.current.structure?.elements ?? [],
+                0.25
+              );
+              nextX = mag.x;
+              nextZ = mag.z;
+            }
+            if (Math.abs(nextX - activeElementDrag.curX) > 0.01 || Math.abs(nextZ - activeElementDrag.curZ) > 0.01) {
+              activeElementDrag.hasMoved = true;
+            }
+            activeElementDrag.curX = nextX;
+            activeElementDrag.curZ = nextZ;
+            if (activeElementDrag.targetObj) {
+              activeElementDrag.targetObj.position.set(nextX, activeElementDrag.baseObjY, nextZ);
+              syncSelectionOutlineRef.current();
+            }
+          }
+        }
+        canvasEl.style.cursor = 'move';
         return;
       }
 
@@ -871,6 +1517,10 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
         } else {
           canvasEl.style.cursor = 'pointer';
         }
+      } else if (customizeModeRef.current && selectedElementIdRef.current) {
+        const sHits = raycaster.intersectObjects(getSelectableStructuralMeshes(), false);
+        const sMeta = sHits[0]?.object.userData as Partial<StructuralSurfaceUserData> | undefined;
+        canvasEl.style.cursor = sMeta?.elementId === selectedElementIdRef.current ? 'move' : 'grab';
       } else {
         canvasEl.style.cursor = 'grab';
       }
@@ -895,7 +1545,70 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       canvasEl.style.cursor = 'grab';
     };
 
+    const endElementDrag = (commit: boolean) => {
+      if (!activeElementDrag) return;
+      const drag = activeElementDrag;
+      activeElementDrag = null;
+      ghostGroup.visible = false;
+      controller.setInteractionLocked(false);
+      canvasEl.style.cursor = 'grab';
+      if (!commit || !drag.hasMoved) return;
+
+      const natSnap = naturalSnapRef.current;
+      const targetId = drag.element.id;
+      mutateLayoutRef.current((prev) => {
+        const baseElements =
+          prev.structure?.elements && prev.structure.elements.length > 0
+            ? prev.structure.elements
+            : generateDefaultStructureFromBlueprint(blueprintRef.current).elements;
+
+        if (drag.isWallOpening && drag.parentWall) {
+          const nextElements = baseElements.map((el) => {
+            if (el.id !== targetId) return el;
+            return (
+              snapOpeningToWall({ ...el, wallOffsetRatio: drag.curRatio }, drag.parentWall!, {
+                naturalSnap: natSnap,
+              }) ?? el
+            );
+          });
+          return { ...prev, structure: { elements: nextElements } };
+        }
+
+        const movedBase = baseElements.map((el) =>
+          el.id === targetId ? { ...el, x: drag.curX, z: drag.curZ } : el
+        );
+        const movedWall = movedBase.find((e) => e.id === targetId);
+        const nextElements =
+          movedWall?.kind === 'wall'
+            ? movedBase.map((el) =>
+                el.parentWallId === targetId
+                  ? snapOpeningToWall(el, movedWall, { naturalSnap: natSnap }) ?? el
+                  : el
+              )
+            : movedBase;
+
+        const nextRooms =
+          movedWall?.kind === 'floor' && movedWall.roomId && prev.rooms
+            ? prev.rooms.map((rm) =>
+                rm.id === movedWall.roomId ? { ...rm, x: drag.curX, z: drag.curZ } : rm
+              )
+            : prev.rooms;
+
+        return {
+          ...prev,
+          rooms: nextRooms,
+          structure: { elements: nextElements },
+        };
+      });
+    };
+
     const onPointerUp = (ev: PointerEvent) => {
+      if (activeElementDrag) {
+        const didMove = activeElementDrag.hasMoved;
+        endElementDrag(true);
+        if (didMove) return;
+      }
+
       if (activeSliderDrag) {
         endSliderDrag(ev);
         return;
@@ -907,96 +1620,340 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       setPointerNdcFromEvent(ev);
       raycaster.setFromCamera(pointerNdc, cameraRef.current);
 
-      // PRIORITY 0 (Phase 10D): Tap-to-Snap Surface Placement Mode
-      const pendingSnapDeviceId = snapTargetDeviceIdRef.current;
-      if (pendingSnapDeviceId) {
-        const snapHits = raycaster.intersectObjects(getVisibleSnapSurfaceMeshes(), false);
-        if (snapHits.length > 0) {
-          const hit = snapHits[0];
-          const meta = hit.object.userData as SnapSurfaceUserData | undefined;
-          const floorEntry = meta
-            ? archRef.current.floors.find((f) => f.spec.id === meta.floorId)
-            : undefined;
-          if (meta && floorEntry) {
-            _snapLocal.copy(hit.point);
-            floorEntry.group.worldToLocal(_snapLocal);
+      const natSnap = naturalSnapRef.current;
 
-            let offsetAlong = 0;
-            let offsetZ = 0;
-            let elevationM = 1.28;
-
-            if (meta.surface === 'north' || meta.surface === 'south') {
-              offsetAlong = clampNumber((_snapLocal.x - meta.roomX) / meta.roomW, -0.42, 0.42);
-              elevationM = clampNumber(
-                _snapLocal.y - meta.slabTopY,
-                0.35,
-                Math.max(0.55, meta.wallHeight - 0.25)
-              );
-            } else if (meta.surface === 'east' || meta.surface === 'west') {
-              offsetAlong = clampNumber((_snapLocal.z - meta.roomZ) / meta.roomD, -0.42, 0.42);
-              elevationM = clampNumber(
-                _snapLocal.y - meta.slabTopY,
-                0.35,
-                Math.max(0.55, meta.wallHeight - 0.25)
-              );
-            } else if (meta.surface === 'ceiling') {
-              offsetAlong = snapToHalfMeter(
-                clampNumber(_snapLocal.x - meta.roomX, -meta.roomW * 0.38, meta.roomW * 0.38)
-              );
-              offsetZ = snapToHalfMeter(
-                clampNumber(_snapLocal.z - meta.roomZ, -meta.roomD * 0.38, meta.roomD * 0.38)
-              );
-              elevationM = Math.max(0.8, meta.wallHeight - 0.24);
-            } else {
-              offsetAlong = snapToHalfMeter(
-                clampNumber(_snapLocal.x - meta.roomX, -meta.roomW * 0.4, meta.roomW * 0.4)
-              );
-              offsetZ = snapToHalfMeter(
-                clampNumber(_snapLocal.z - meta.roomZ, -meta.roomD * 0.4, meta.roomD * 0.4)
-              );
-              elevationM = 0.01;
+      // PRIORITY 0A (Phase 11C + 12B): Modular Structure Tap-to-Place
+      const pendingBuild = pendingBuildKindRef.current;
+      if (pendingBuild) {
+        const preset = MODULAR_BLOCK_CATALOG.find((b) => b.kind === pendingBuild);
+        if (preset) {
+          if (preset.requiresWall) {
+            const hits = raycaster.intersectObjects(getVisibleStructuralMeshes(), false);
+            const hit = hits[0];
+            const meta = hit?.object.userData as Partial<StructuralSurfaceUserData> | undefined;
+            if (!hit || !meta || meta.surfaceType !== 'wall') {
+              showNoticeRef.current('Windows & doors snap strictly onto an existing 3D wall', 'danger');
+              return;
             }
+            const floorEntry = archRef.current.floors.find((f) => f.spec.id === meta.floorId);
+            _snapLocal.copy(hit.point);
+            floorEntry?.group.worldToLocal(_snapLocal);
 
+            const newId = `mod_${pendingBuild}_${Date.now().toString(36).slice(-4)}`;
             mutateLayoutRef.current((prev) => {
-              const prevPlacements = prev.placements ?? [];
-              const existing = prevPlacements.find((p) => p.device_id === pendingSnapDeviceId);
-              const nextPlacement: Layout3DPlacement = {
-                device_id: pendingSnapDeviceId,
-                room_id: meta.roomId,
-                floor_id: meta.floorId,
-                surface: meta.surface,
-                offset_along: Number(offsetAlong.toFixed(2)),
-                offset_z: Number(offsetZ.toFixed(2)),
-                elevation_m: Number(elevationM.toFixed(2)),
-                rotation_deg: existing?.rotation_deg ?? 0,
-                scale: existing?.scale ?? 1,
-                hidden: false,
-              };
-              const exists = prevPlacements.some((p) => p.device_id === pendingSnapDeviceId);
+              const baseElements =
+                prev.structure?.elements && prev.structure.elements.length > 0
+                  ? prev.structure.elements
+                  : generateDefaultStructureFromBlueprint(blueprintRef.current).elements;
+              const parentWall = baseElements.find((e) => e.id === meta.elementId && e.kind === 'wall');
+              let nextEl: StructuralElement | null = null;
+              if (parentWall) {
+                const rad = THREE.MathUtils.degToRad(parentWall.rotationDeg);
+                const alongX = Math.cos(rad);
+                const alongZ = -Math.sin(rad);
+                const proj = (_snapLocal.x - parentWall.x) * alongX + (_snapLocal.z - parentWall.z) * alongZ;
+                const offsetRatio = clampNumber(proj / Math.max(0.6, parentWall.w), -0.4, 0.4);
+                const wallBaseY = parentWall.y ?? floorEntry?.spec.slabThickness ?? 0.18;
+                const freeY = clampNumber(
+                  _snapLocal.y - preset.defaultH / 2,
+                  wallBaseY,
+                  wallBaseY + Math.max(0.2, parentWall.h - preset.defaultH)
+                );
+                nextEl = snapOpeningToWall(
+                  {
+                    id: newId,
+                    kind: pendingBuild,
+                    variant: preset.defaultVariant,
+                    floorId: parentWall.floorId,
+                    roomId: parentWall.roomId,
+                    x: parentWall.x,
+                    z: parentWall.z,
+                    y: natSnap
+                      ? wallBaseY + (pendingBuild === 'window' ? 1.0 : 0)
+                      : Number(freeY.toFixed(2)),
+                    w: preset.defaultW,
+                    d: parentWall.d,
+                    h: preset.defaultH,
+                    rotationDeg: parentWall.rotationDeg,
+                    parentWallId: parentWall.id,
+                    wallOffsetRatio: offsetRatio,
+                  },
+                  parentWall,
+                  { naturalSnap: natSnap }
+                );
+              }
+              if (!nextEl) {
+                const norm = getHitNormalTuple(hit, meta);
+                const wallNormalZ = Math.abs(norm[2]);
+                nextEl = {
+                  id: newId,
+                  kind: pendingBuild,
+                  variant: preset.defaultVariant,
+                  floorId: meta.floorId ?? activeBuildFloorIdRef.current,
+                  roomId: meta.roomId ?? undefined,
+                  x: Number(_snapLocal.x.toFixed(2)),
+                  z: Number(_snapLocal.z.toFixed(2)),
+                  y: (floorEntry?.spec.slabThickness ?? 0.18) + (pendingBuild === 'window' ? 1.0 : 0),
+                  w: preset.defaultW,
+                  d: preset.defaultD,
+                  h: preset.defaultH,
+                  rotationDeg: wallNormalZ >= 0.5 ? 0 : 90,
+                };
+              }
               return {
                 ...prev,
-                placements: exists
-                  ? prevPlacements.map((p) =>
-                      p.device_id === pendingSnapDeviceId ? nextPlacement : p
-                    )
-                  : [...prevPlacements, nextPlacement],
+                structure: { elements: [...baseElements.slice(0, 159), nextEl] },
               };
             });
-
-            const devName = devicesRef.current[pendingSnapDeviceId]?.name ?? pendingSnapDeviceId;
-            const roomName =
-              blueprintRef.current.rooms.find((r) => r.id === meta.roomId)?.name ?? meta.roomId;
-            setSnapTargetDeviceId(null);
+            setSelectedElementId(newId);
+            setPendingBuildKind(null);
+            ghostGroup.visible = false;
             setTrayCollapsed(false);
-            showNoticeRef.current(
-              `Snapped ${devName} to ${roomName} (${meta.surface.toUpperCase()})`,
-              'info'
-            );
+            showNoticeRef.current(`Snapped ${preset.label} onto wall`, 'info');
+            return;
           }
-        } else {
-          showNoticeRef.current('Tap directly on a room wall, floor, or ceiling to snap', 'info');
+
+          // Grid placement on active build floor
+          const bp = blueprintRef.current;
+          const targetFl =
+            bp.floors.find((f) => f.id === activeBuildFloorIdRef.current) ?? bp.floors[0];
+          const planeY = targetFl ? targetFl.baseY + (pendingBuild === 'ground' ? 0 : targetFl.slabThickness) : 0;
+          _buildFloorPlane.constant = -planeY;
+          if (!raycaster.ray.intersectPlane(_buildFloorPlane, _buildPlaneHit)) {
+            showNoticeRef.current('Tap inside the 3D floor grid to place block', 'info');
+            return;
+          }
+          const newId = `mod_${pendingBuild}_${Date.now().toString(36).slice(-4)}`;
+          const rawX = natSnap ? snapGridHalfMeter(_buildPlaneHit.x) : Number(_buildPlaneHit.x.toFixed(2));
+          const rawZ = natSnap ? snapGridHalfMeter(_buildPlaneHit.z) : Number(_buildPlaneHit.z.toFixed(2));
+          const elevY =
+            pendingBuild === 'ground'
+              ? -0.02
+              : pendingBuild === 'roof'
+              ? (targetFl?.slabThickness ?? 0.16) + (targetFl?.wallHeight ?? 2.4) - 0.1
+              : targetFl?.slabThickness ?? 0.18;
+
+          mutateLayoutRef.current((prev) => {
+            const baseElements =
+              prev.structure?.elements && prev.structure.elements.length > 0
+                ? prev.structure.elements
+                : generateDefaultStructureFromBlueprint(blueprintRef.current).elements;
+            let created: StructuralElement = {
+              id: newId,
+              kind: pendingBuild,
+              variant: preset.defaultVariant,
+              floorId: targetFl?.id ?? 'gf',
+              x: rawX,
+              z: rawZ,
+              y: Number(elevY.toFixed(2)),
+              w: preset.defaultW,
+              d: preset.defaultD,
+              h: preset.defaultH,
+              rotationDeg: 0,
+            };
+            if (natSnap) {
+              created = snapWallEndpointsMagnetic(created, baseElements, 0.25);
+            }
+            return {
+              ...prev,
+              structure: { elements: [...baseElements.slice(0, 159), created] },
+            };
+          });
+          setSelectedElementId(newId);
+          setPendingBuildKind(null);
+          ghostGroup.visible = false;
+          setTrayCollapsed(false);
+          showNoticeRef.current(`Placed ${preset.label} on ${targetFl?.shortLabel ?? 'GF'}`, 'info');
+          return;
         }
+      }
+
+      // PRIORITY 0B (Phase 11C + 12B): Device Tap-to-Snap with Auto-Snap Ergonomic Heights
+      const pendingSnapDeviceId = snapTargetDeviceIdRef.current;
+      if (pendingSnapDeviceId) {
+        const snapHits = raycaster.intersectObjects(getVisibleStructuralMeshes(), false);
+        if (snapHits.length === 0) {
+          showNoticeRef.current('Tap directly on a valid 3D surface', 'danger');
+          return;
+        }
+        const hit = snapHits[0];
+        const meta = hit.object.userData as Partial<StructuralSurfaceUserData> | undefined;
+        const dev = devicesRef.current[pendingSnapDeviceId];
+        if (!meta || !dev) return;
+
+        const floorId = meta.floorId ?? 'gf';
+        const room = findBestRoomForPoint(floorId, hit.point.x, hit.point.z, meta.roomId);
+        const surfType: SurfaceTagType = meta.surfaceType ?? 'floor';
+        const validation = isSurfaceValidForDevice(
+          dev,
+          surfType,
+          room?.floorType ?? null,
+          floorId
+        );
+        if (!validation.valid) {
+          showNoticeRef.current(validation.reason, 'danger');
+          return;
+        }
+        if (!room) return;
+
+        const floorSpec = getFloorForRoom(blueprintRef.current, room.id);
+        const coords = resolveSurfacePlacementCoords(
+          hit,
+          meta as StructuralSurfaceUserData,
+          room,
+          floorSpec.slabThickness + 0.01,
+          room.wallHeight ?? floorSpec.wallHeight,
+          0.01,
+          natSnap
+        );
+
+        const natDev = natSnap
+          ? getNaturalDeviceMountSpec(dev, surfType, coords.elevationM)
+          : null;
+        const finalElev = natDev ? natDev.elevationM : coords.elevationM;
+
+        mutateLayoutRef.current((prev) => {
+          const prevPlacements = prev.placements ?? [];
+          const existing = prevPlacements.find((p) => p.device_id === pendingSnapDeviceId);
+          const nextPlacement: Layout3DPlacement = {
+            device_id: pendingSnapDeviceId,
+            room_id: room.id,
+            floor_id: room.floorId,
+            surface: coords.surface,
+            offset_along: Number(coords.offsetAlong.toFixed(2)),
+            offset_z: Number(coords.offsetZ.toFixed(2)),
+            elevation_m: Number(finalElev.toFixed(2)),
+            rotation_deg: natDev ? natDev.rotationDeg : existing?.rotation_deg ?? 0,
+            scale: existing?.scale ?? 1,
+            hidden: false,
+          };
+          const exists = prevPlacements.some((p) => p.device_id === pendingSnapDeviceId);
+          return {
+            ...prev,
+            placements: exists
+              ? prevPlacements.map((p) =>
+                  p.device_id === pendingSnapDeviceId ? nextPlacement : p
+                )
+              : [...prevPlacements, nextPlacement],
+          };
+        });
+
+        setSnapTargetDeviceId(null);
+        ghostGroup.visible = false;
+        setTrayCollapsed(false);
+        showNoticeRef.current(
+          `Snapped ${dev.name} to ${room.name} (${coords.surface.toUpperCase()}${natSnap ? ` · ${finalElev.toFixed(2)}m` : ''})`,
+          'info'
+        );
         return;
+      }
+
+      // PRIORITY 0C (Phase 11C + 12B): Physical Appliance Tap-to-Snap + Auto-Snap Center/Heights
+      const pendingApp = pendingApplianceKindRef.current;
+      if (pendingApp) {
+        const appHits = raycaster.intersectObjects(getVisibleStructuralMeshes(), false);
+        if (appHits.length === 0) {
+          showNoticeRef.current('Tap directly on a valid 3D surface', 'danger');
+          return;
+        }
+        const hit = appHits[0];
+        const meta = hit.object.userData as Partial<StructuralSurfaceUserData> | undefined;
+        if (!meta) return;
+
+        const floorId = meta.floorId ?? 'gf';
+        const room = findBestRoomForPoint(floorId, hit.point.x, hit.point.z, meta.roomId);
+        const surfType: SurfaceTagType = meta.surfaceType ?? 'floor';
+        const validation = isSurfaceValidForAppliance(
+          pendingApp,
+          surfType,
+          room?.floorType ?? null,
+          floorId
+        );
+        if (!validation.valid) {
+          showNoticeRef.current(validation.reason, 'danger');
+          return;
+        }
+        if (!room) return;
+
+        const preset = PHYSICAL_APPLIANCES_CATALOG.find((a) => a.kind === pendingApp);
+        const floorSpec = getFloorForRoom(blueprintRef.current, room.id);
+        const roomWallH = room.wallHeight ?? floorSpec.wallHeight;
+        const coords = resolveSurfacePlacementCoords(
+          hit,
+          meta as StructuralSurfaceUserData,
+          room,
+          floorSpec.slabThickness + 0.01,
+          roomWallH,
+          preset?.defaultElevationM ?? 0.02,
+          natSnap
+        );
+
+        const natApp = natSnap ? getNaturalApplianceMountSpec(pendingApp, roomWallH) : null;
+        const finalElev = natApp ? natApp.elevationM : coords.elevationM;
+
+        const newAppId = `app_${pendingApp}_${Date.now().toString(36).slice(-4)}`;
+        const roomDevices = Object.values(devicesRef.current).filter((d) => d.room_id === room.id);
+        const defaultDev =
+          pendingApp === 'water_tank'
+            ? Object.values(devicesRef.current).find((d) => d.module_code.startsWith('WAT-'))
+            : roomDevices[0] ?? Object.values(devicesRef.current)[0];
+        const defaultCap = defaultDev?.info?.capabilities?.find(
+          (c) => c.type === 'switch' || c.type === 'level' || c.type === 'pump_switch'
+        );
+
+        const newAppliance: Layout3DAppliance = {
+          id: newAppId,
+          kind: pendingApp,
+          label: preset?.label ?? pendingApp,
+          room_id: room.id,
+          floor_id: room.floorId,
+          surface: coords.surface,
+          offset_along: Number(coords.offsetAlong.toFixed(2)),
+          offset_z: Number(coords.offsetZ.toFixed(2)),
+          elevation_m: Number(finalElev.toFixed(2)),
+          rotation_deg: natApp ? natApp.rotationDeg : 0,
+          linked_device_id: defaultDev?.device_id ?? null,
+          linked_channel_key: defaultCap?.key ?? null,
+        };
+
+        mutateLayoutRef.current((prev) => ({
+          ...prev,
+          appliances: [...(prev.appliances ?? []).slice(0, 63), newAppliance],
+        }));
+        setSelectedApplianceId(newAppId);
+        setPendingApplianceKind(null);
+        ghostGroup.visible = false;
+        setTrayCollapsed(false);
+        showNoticeRef.current(
+          `Placed ${newAppliance.label} in ${room.name} (${coords.surface.toUpperCase()})`,
+          'info'
+        );
+        return;
+      }
+
+      // Priority 0D: Physical Appliance Selection in Customize Mode (or toggle linked device!)
+      const appClickHits = raycaster.intersectObjects(getVisibleApplianceMeshes(), false);
+      if (appClickHits.length > 0) {
+        const appMeta = appClickHits[0].object.userData as ApplianceControlUserData | undefined;
+        if (appMeta?.applianceId) {
+          if (customizeModeRef.current) {
+            setSelectedApplianceId(appMeta.applianceId);
+            setCustomizerTab('appliances');
+            setTrayCollapsed(false);
+            return;
+          }
+          const appObj = blueprintRef.current.appliances?.find((a) => a.id === appMeta.applianceId);
+          if (appObj?.linked_device_id && appObj?.linked_channel_key) {
+            const dev = devicesRef.current[appObj.linked_device_id];
+            if (dev && dev.state.fault === null) {
+              const cur = dev.state.state[appObj.linked_channel_key];
+              const nextVal = typeof cur === 'number' ? (cur > 0 ? 0 : 2) : !Boolean(cur);
+              onSendCommandRef.current(dev.device_id, { [appObj.linked_channel_key]: nextVal });
+              showNoticeRef.current(`${appObj.label} → ${nextVal ? 'ON' : 'OFF'}`, 'info');
+              return;
+            }
+          }
+        }
       }
 
       // Priority 1: Direct 3D Hardware Models & Controls
@@ -1010,7 +1967,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
 
           if (customizeModeRef.current) {
             setSelectedPlacementDeviceId(meta.deviceId);
-            setCustomizerTab('modules');
+            setCustomizerTab('devices');
             setTrayCollapsed(false);
             return;
           }
@@ -1085,7 +2042,27 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
         }
       }
 
-      // Priority 2: Visible Room Floor Slabs
+      // Priority 2: Edit Mode Structural Selection (ANY wall, door, window, floor, fence, roof, ground)
+      if (customizeModeRef.current) {
+        const structHits = raycaster.intersectObjects(getSelectableStructuralMeshes(), false);
+        if (structHits.length > 0) {
+          const sMeta = structHits[0].object.userData as Partial<StructuralSurfaceUserData> | undefined;
+          if (sMeta?.elementId) {
+            setSelectedElementId(sMeta.elementId);
+            if (sMeta.roomId) {
+              setSelectedEditRoomId(sMeta.roomId);
+            }
+            if (sMeta.floorId) {
+              setActiveBuildFloorId(sMeta.floorId);
+            }
+            setCustomizerTab('build');
+            setTrayCollapsed(false);
+            return;
+          }
+        }
+      }
+
+      // Priority 3: Visible Room Floor Slabs
       const visibleRooms = archRef.current.roomHitMeshes.filter((mesh) =>
         isFloorVisibleNow(String(mesh.userData.floorId ?? ''))
       );
@@ -1094,15 +2071,18 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
         const hitRoomId = String(roomHits[0].object.userData.roomId);
         if (customizeModeRef.current) {
           setSelectedEditRoomId(hitRoomId);
-          setCustomizerTab('rooms');
+          setSelectedElementId(null);
+          setCustomizerTab('build');
           setTrayCollapsed(false);
         } else {
           focusRoomRef.current(hitRoomId);
         }
+        return;
       }
     };
 
     const onPointerCancel = () => {
+      endElementDrag(false);
       endSliderDrag();
     };
 
@@ -1188,9 +2168,12 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       const bp = blueprintRef.current;
 
       if (builtArch) {
-        // B. Animate Procedural 3D Hardware Models
+        // B. Animate Procedural 3D Hardware & Physical Appliance Models
         builtArch.hardwareModels.forEach((model) => {
           model.animate(dt, elapsedTotal);
+        });
+        builtArch.applianceModels.forEach((appModel) => {
+          appModel.animate(dt, elapsedTotal);
         });
 
         // C. Animate Multi-Floor Vertical Separation, Visibility Toggle & Fade
@@ -1228,7 +2211,11 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
         }
 
         // D. Smart Auto-Cutaway ("Dollhouse") Walls — Keep walls upright during Tap-to-Snap!
-        const cutawayOn = autoCutawayRef.current && !snapTargetDeviceIdRef.current;
+        const cutawayOn =
+          autoCutawayRef.current &&
+          !snapTargetDeviceIdRef.current &&
+          !pendingBuildKindRef.current &&
+          !pendingApplianceKindRef.current;
         const camX = camera.position.x;
         const camZ = camera.position.z;
         const focusedDevId = selectedDeviceIdRef.current;
@@ -1267,7 +2254,9 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       const labelsEnabled =
         showRoomLabelsRef.current &&
         selectedDeviceIdRef.current === null &&
-        !snapTargetDeviceIdRef.current;
+        !snapTargetDeviceIdRef.current &&
+        !pendingBuildKindRef.current &&
+        !pendingApplianceKindRef.current;
       const rectW = canvasEl.clientWidth;
       const rectH = canvasEl.clientHeight;
       if (builtArch) {
@@ -1316,7 +2305,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
           const inFront = _projVec.z >= -1 && _projVec.z <= 1;
           const px = (_projVec.x * 0.5 + 0.5) * rectW;
           const py = (-_projVec.y * 0.5 + 0.5) * rectH;
-          const inBounds = px > 48 && px < rectW - 48 && py > 54 && py < rectH - 56;
+          const inBounds = px > 48 && px < rectW - 48 && py > 68 && py < rectH - 56;
 
           if (!inFront || !inBounds) {
             labelEl.style.opacity = '0';
@@ -1356,6 +2345,13 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       }
       groundGeo.dispose();
       groundMat.dispose();
+      ghostBoxGeo.dispose();
+      ghostBoxMat.dispose();
+      ghostRingGeo.dispose();
+      ghostRingMat.dispose();
+      selEdgesGeo.dispose();
+      selEdgesMat.dispose();
+      selectionBoxRef.current = null;
       contactGeo.dispose();
       contactMat.dispose();
       shadowTex.dispose();
@@ -1382,6 +2378,8 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
     };
   }, [ecoMode, resolvedLightMode, isSoftwareGl]);
 
+  const effectiveXrayWiring = xrayWiring || (customizeMode && customizerTab === 'appliances');
+
   // EFFECT 2: Hot-Swap Architectural Mesh & Placed Hardware Models (Preserves Camera & WebGL Context!)
   useEffect(() => {
     const scene = sceneRef.current;
@@ -1400,7 +2398,35 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       isLightTheme: resolvedLightMode,
       isSoftwareGl,
       maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
+      xrayWiring: effectiveXrayWiring,
+      selectedApplianceId: customizeMode ? selectedApplianceId : null,
     });
+
+    // Apply active floor visibility synchronously BEFORE mounting to scene (zero 1-frame flash)
+    const selectedFloor = activeFloorRef.current;
+    const selectedFloorIdx =
+      selectedFloor === 'all'
+        ? builtArch.floors.length - 1
+        : builtArch.floors.findIndex((f) => f.spec.id === selectedFloor);
+
+    for (const fl of builtArch.floors) {
+      const floorHiddenByOwner = fl.spec.visible === false;
+      const isAbove = selectedFloor !== 'all' && fl.index > selectedFloorIdx;
+      const isBelow = selectedFloor !== 'all' && fl.index < selectedFloorIdx;
+      const targetLiftY = isAbove ? 2.8 * (fl.index - selectedFloorIdx) : 0;
+      const targetOpacity = floorHiddenByOwner ? 0 : isAbove ? 0 : isBelow ? 0.72 : 1;
+
+      fl.currentLiftY = targetLiftY;
+      fl.currentOpacity = targetOpacity;
+      fl.group.position.y = fl.spec.baseY + targetLiftY;
+      fl.group.visible = !floorHiddenByOwner && targetOpacity > 0.03;
+
+      for (const mat of fl.materials) {
+        const baseOp = mat.depthWrite === false ? 0.34 : 1;
+        mat.opacity = baseOp * targetOpacity;
+      }
+    }
+
     scene.add(builtArch.rootGroup);
     archRef.current = builtArch;
 
@@ -1418,9 +2444,13 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       const dev = devicesRef.current[devId];
       if (dev) model.updateFromDevice(dev, tariffInrRef.current);
     });
-  }, [blueprint, ecoMode, resolvedLightMode, isSoftwareGl]);
+    builtArch.applianceModels.forEach((appModel) => {
+      appModel.updateFromDevices(devicesRef.current);
+    });
+    syncSelectionOutlineRef.current();
+  }, [blueprint, ecoMode, resolvedLightMode, isSoftwareGl, effectiveXrayWiring, customizeMode, selectedApplianceId]);
 
-  // Live Device Telemetry & Status Sync into Procedural 3D Hardware Models (Zero geometry rebuilds)
+  // Live Device Telemetry & Status Sync into Procedural 3D Hardware & Appliance Models (Zero geometry rebuilds)
   useEffect(() => {
     devicesRef.current = devices;
     const arch = archRef.current;
@@ -1431,6 +2461,9 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       if (dev) {
         model.updateFromDevice(dev, tariffInr);
       }
+    });
+    arch.applianceModels.forEach((appModel) => {
+      appModel.updateFromDevices(devices);
     });
   }, [devices, tariffInr]);
 
@@ -1453,6 +2486,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
     setCustomizeMode((prev) => {
       const next = !prev;
       if (next) {
+        setLayout3D((curr) => ensureMaterializedStructure(curr, devicesRef.current));
         setSelectedDeviceId(null);
         setTouchControlsOpen(false);
         setFocusedRoomId(null);
@@ -1461,7 +2495,10 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
           setSelectedEditRoomId(layout3D.rooms[0].id);
         }
       } else {
+        setSelectedElementId(null);
         setSnapTargetDeviceId(null);
+        setPendingBuildKind(null);
+        setPendingApplianceKind(null);
       }
       return next;
     });
@@ -1602,7 +2639,12 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
       ) : (
         <div
           ref={topBarRef}
-          className="absolute top-2.5 inset-x-2.5 z-30 flex items-center justify-between gap-1.5 pointer-events-none"
+          className={cn(
+            'absolute inset-x-3 z-30 flex items-center justify-between gap-1.5 pointer-events-none',
+            isFullscreen && usingCssFullscreen
+              ? 'top-[max(1rem,env(safe-area-inset-top))]'
+              : 'top-3.5 sm:top-4'
+          )}
         >
           {/* Left Group: [Back/2D] | [Floor Selector ▾] | [Camera Mode ▾] */}
           <div className="pointer-events-auto flex items-center gap-1 min-w-0">
@@ -1822,7 +2864,8 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
                 onClick={() => {
                   if (customizeMode) {
                     setSelectedEditRoomId(room.id);
-                    setCustomizerTab('rooms');
+                    setSelectedElementId(null);
+                    setCustomizerTab('build');
                     setTrayCollapsed(false);
                   } else {
                     focusRoom(room.id);
@@ -1873,7 +2916,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
 
           {/* Rolling Low-FPS Eco 2D Suggestion Pill (Budget Android Protection) */}
           {lowFpsBanner && !lowFpsDismissed && (
-            <div className="absolute top-14 inset-x-3 z-25 flex justify-center pointer-events-none">
+            <div className="absolute top-16 inset-x-3 z-25 flex justify-center pointer-events-none">
               <div
                 className={cn(
                   'pointer-events-auto inline-flex items-center gap-2 rounded-full border border-amber-500/60 px-3 py-1.5 text-[11px] shadow-xl',
@@ -1913,7 +2956,7 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
             <div
               className={cn(
                 'absolute inset-x-3 z-20 flex justify-center pointer-events-none',
-                lowFpsBanner && !lowFpsDismissed ? 'top-24' : 'top-14'
+                lowFpsBanner && !lowFpsDismissed ? 'top-28' : 'top-16'
               )}
             >
               <div
@@ -1929,15 +2972,25 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
             </div>
           )}
 
-          {/* Phase 10D Owner & Admin 3D Customizer Tray OR Standard Slim Focus Strip */}
+          {/* Phase 11C 3-Tab Modular Studio Tray OR Standard Slim Focus Strip */}
           {customizeMode ? (
             <Home3DCustomizerTray
               layout={layout3D}
               devices={devices}
               activeTab={customizerTab}
-              onTabChange={setCustomizerTab}
+              onTabChange={(tab) => {
+                setCustomizerTab(tab);
+                if (tab === 'appliances') {
+                  setXrayWiring(true);
+                }
+              }}
               collapsed={trayCollapsed}
               onToggleCollapsed={() => setTrayCollapsed((c) => !c)}
+              activeBuildFloorId={effectiveBuildFloorId}
+              onSelectBuildFloor={(flId) => {
+                setActiveBuildFloorId(flId);
+                handleSelectFloor(flId);
+              }}
               selectedRoomId={selectedEditRoomId}
               onSelectRoom={(rmId) => {
                 setSelectedEditRoomId(rmId);
@@ -1948,6 +3001,19 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
                     controllerRef.current?.focusRoom(rm, fl.baseY);
                   }
                 }
+              }}
+              selectedElementId={selectedElementId}
+              onSelectElement={setSelectedElementId}
+              pendingBuildKind={pendingBuildKind}
+              onStartBuildPlacement={(kind) => {
+                setSnapTargetDeviceId(null);
+                setPendingApplianceKind(null);
+                setPendingBuildKind(kind);
+                setTrayCollapsed(true);
+              }}
+              onCancelBuildPlacement={() => {
+                setPendingBuildKind(null);
+                setTrayCollapsed(false);
               }}
               selectedPlacementDeviceId={selectedPlacementDeviceId}
               onSelectPlacementDevice={(devId) => {
@@ -1967,6 +3033,8 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
               }}
               snapTargetDeviceId={snapTargetDeviceId}
               onStartSnapPlacement={(devId) => {
+                setPendingBuildKind(null);
+                setPendingApplianceKind(null);
                 setSnapTargetDeviceId(devId);
                 setTrayCollapsed(true);
               }}
@@ -1974,6 +3042,21 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
                 setSnapTargetDeviceId(null);
                 setTrayCollapsed(false);
               }}
+              selectedApplianceId={selectedApplianceId}
+              onSelectAppliance={setSelectedApplianceId}
+              pendingApplianceKind={pendingApplianceKind}
+              onStartAppliancePlacement={(kind) => {
+                setPendingBuildKind(null);
+                setSnapTargetDeviceId(null);
+                setPendingApplianceKind(kind);
+                setTrayCollapsed(true);
+              }}
+              onCancelAppliancePlacement={() => {
+                setPendingApplianceKind(null);
+                setTrayCollapsed(false);
+              }}
+              xrayWiring={effectiveXrayWiring}
+              onToggleXrayWiring={() => setXrayWiring((v) => !v)}
               onApplyTemplate={handleApplyTemplate}
               onResetTemplate={handleResetTemplate}
               onMutateLayout={mutateLayout}
@@ -1981,6 +3064,9 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
               onToggleAutoCutaway={() => setAutoCutaway((v) => !v)}
               showRoomLabels={showRoomLabels}
               onToggleRoomLabels={() => setShowRoomLabels((v) => !v)}
+              naturalSnap={naturalSnap}
+              onToggleNaturalSnap={() => setNaturalSnap((v) => !v)}
+              onPreviewElement={previewElementInScene}
               canUndo={undoStack.length > 0}
               canRedo={redoStack.length > 0}
               onUndo={handleUndo}
@@ -1990,7 +3076,10 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
               isDirty={isDirty}
               onClose={() => {
                 setCustomizeMode(false);
+                setSelectedElementId(null);
                 setSnapTargetDeviceId(null);
+                setPendingBuildKind(null);
+                setPendingApplianceKind(null);
               }}
               isLightTheme={resolvedLightMode}
               isAdminInstaller={isAdminInstaller}
@@ -2074,24 +3163,19 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
                                 );
                               }
                               return (
-                                <div key={cap.key} className="space-y-1 font-mono text-[11px]">
-                                  <div className="flex justify-between">
-                                    <span className="opacity-80">{cap.label}</span>
-                                    <span className="font-bold text-accent">{currentVal}%</span>
-                                  </div>
-                                  <input
-                                    type="range"
-                                    min={cap.min}
-                                    max={cap.max}
-                                    step={cap.step ?? 5}
-                                    value={currentVal}
-                                    onChange={(e) =>
-                                      handleToggleLoad(selectedDev, cap.key, Number(e.target.value))
-                                    }
-                                    aria-label={cap.label}
-                                    className="w-full accent-[var(--dd-accent)] cursor-pointer"
-                                  />
-                                </div>
+                                <PrecisionSlider
+                                  key={cap.key}
+                                  compact
+                                  label={cap.label}
+                                  unit="%"
+                                  min={cap.min}
+                                  max={cap.max}
+                                  step={cap.step ?? 5}
+                                  value={currentVal}
+                                  onChange={(val) =>
+                                    handleToggleLoad(selectedDev, cap.key, val)
+                                  }
+                                />
                               );
                             })}
 

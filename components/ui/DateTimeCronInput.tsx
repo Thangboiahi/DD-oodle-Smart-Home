@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Calendar, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ThemedDatePicker, ThemedTimePicker } from './ThemedDateTimePickers';
 
 export interface DateTimeCronValue {
   time: string; // HH:MM
@@ -59,26 +59,20 @@ export const DateTimeCronInput: React.FC<DateTimeCronInputProps> = ({
       {label && <div className="text-xs font-medium text-foreground">{label}</div>}
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 rounded-[var(--dd-radius-control)] border border-border bg-surface px-2.5 h-9 text-xs">
-          <Clock className="h-3.5 w-3.5 text-foreground-muted" />
-          <input
-            type="time"
+        <div className="w-32">
+          <ThemedTimePicker
             value={value.time}
-            onChange={(e) => onChange({ ...value, time: e.target.value })}
-            className="bg-transparent font-mono text-xs text-foreground tabular-nums focus:outline-none"
+            onChange={(nextTime) => onChange({ ...value, time: nextTime })}
+            ariaLabel="Schedule time"
           />
-        </label>
+        </div>
 
         {showDate && (
-          <label className="flex items-center gap-2 rounded-[var(--dd-radius-control)] border border-border bg-surface px-2.5 h-9 text-xs">
-            <Calendar className="h-3.5 w-3.5 text-foreground-muted" />
-            <input
-              type="date"
-              value={value.date ?? ''}
-              onChange={(e) => onChange({ ...value, date: e.target.value })}
-              className="bg-transparent font-mono text-xs text-foreground tabular-nums focus:outline-none"
-            />
-          </label>
+          <ThemedDatePicker
+            value={value.date ?? ''}
+            onChange={(nextDate) => onChange({ ...value, date: nextDate })}
+            ariaLabel="Schedule date"
+          />
         )}
 
         <span className="ml-auto rounded border border-border bg-surface px-2 py-1 font-mono text-[11px] text-accent tabular-nums">

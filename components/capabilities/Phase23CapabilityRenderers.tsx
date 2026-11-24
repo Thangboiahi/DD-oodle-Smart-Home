@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { FullscreenStage } from '@/components/workspace/FullscreenStage';
 import { Badge } from '@/components/ui/Badge';
+import { PrecisionSlider } from '@/components/ui/PrecisionSlider';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 
 /**
@@ -50,25 +51,25 @@ export const SmartLockCapabilityRenderer: React.FC<{
             <span>SLIDE TO UNLOCK</span>
             <span className="tabular-nums">{slideVal}%</span>
           </div>
-          <input
-            type="range"
+          <PrecisionSlider
+            compact
+            unit="%"
             min={0}
             max={100}
+            step={1}
             value={slideVal}
             disabled={disabled}
-            aria-label={`Slide to unlock ${label}`}
-            onChange={(e) => {
-              const v = Number(e.target.value);
+            ariaLabel={`Slide to unlock ${label}`}
+            onChange={(v) => {
               setSlideVal(v);
               if (v >= 95) {
                 onUnlockToggle(false);
                 setSlideVal(0);
               }
             }}
-            onPointerUp={() => {
-              if (slideVal < 95) setSlideVal(0);
+            onRelease={(v) => {
+              if (v < 95) setSlideVal(0);
             }}
-            className="dd-range w-full h-7"
           />
         </div>
       ) : (

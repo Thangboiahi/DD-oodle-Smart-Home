@@ -436,36 +436,3 @@ body {
 .pb-safe {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
-
-/* Custom Range Input Reset for PrecisionSlider */
-input[type="range"].dd-range {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
-}
-input[type="range"].dd-range:focus {
-  outline: none;
-}
-input[type="range"].dd-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 18px;
-  width: 18px;
-  border-radius: 9999px;
-  background: var(--dd-accent);
-  border: 2px solid var(--dd-surface);
-  box-shadow: 0 0 0 1px var(--dd-accent-border);
-  transition: transform 120ms ease;
-}
-input[type="range"].dd-range:active::-webkit-slider-thumb {
-  transform: scale(1.12);
-}
-input[type="range"].dd-range::-moz-range-thumb {
-  height: 18px;
-  width: 18px;
-  border-radius: 9999px;
-  background: var(--dd-accent);
-  border: 2px solid var(--dd-surface);
-  box-shadow: 0 0 0 1px var(--dd-accent-border);
-}

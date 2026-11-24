@@ -539,6 +539,18 @@ export const VehicleLiveMap: React.FC<VehicleLiveMapProps> = ({
     fallbackAppliedRef.current = false;
     currentStyleIsLightRef.current = isLightTheme;
 
+    if (typeof window !== 'undefined') {
+      const origin =
+        window.location.origin && window.location.origin !== 'null'
+          ? window.location.origin
+          : '';
+      const workerVersion =
+        typeof maplibregl.getVersion === 'function' ? maplibregl.getVersion() : '6.19.0';
+      maplibregl.setWorkerUrl(
+        `${origin}/maplibre-gl-worker.js?v=${encodeURIComponent(workerVersion)}`
+      );
+    }
+
     const initialStyle = isLightTheme ? OPENFREEMAP_LIGHT_STYLE : OPENFREEMAP_DARK_STYLE;
 
     const map = new maplibregl.Map({

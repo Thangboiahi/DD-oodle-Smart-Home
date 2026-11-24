@@ -22,7 +22,7 @@ import {
   normalizeHex,
 } from './triColor';
 import { useWorkspace, BaseTheme } from '@/components/workspace/WorkspaceProvider';
-import { Badge, Button, SegmentedControl } from '@/components/ui';
+import { Badge, Button, SegmentedControl, ThemedColorPicker } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 const PRESET_LIST = [
@@ -206,12 +206,11 @@ export const CustomTriColorStudio: React.FC = () => {
                 <div className="text-[10px] text-foreground-muted">{ch.role}</div>
 
                 <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    aria-label={`${ch.title} color picker`}
+                  <ThemedColorPicker
+                    ariaLabel={`${ch.title} color picker`}
+                    label={ch.title}
                     value={normalizeHex(currentHex) ?? activePalette[ch.key]}
-                    onChange={(e) => handleCustomColorPick(ch.key, e.target.value)}
-                    className="h-9 w-10 rounded border border-border bg-transparent cursor-pointer shrink-0 p-0.5"
+                    onChange={(hex) => handleCustomColorPick(ch.key, hex)}
                   />
                   <input
                     type="text"

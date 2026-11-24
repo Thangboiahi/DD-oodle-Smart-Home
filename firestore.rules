@@ -119,14 +119,16 @@ service cloud.firestore {
     function isValidLayout3DMap(layout) {
       return layout is map &&
         layout.keys().hasAll(['template_id', 'eco_fallback', 'pins']) &&
-        layout.keys().hasOnly(['template_id', 'eco_fallback', 'pins', 'floors', 'rooms', 'placements']) &&
+        layout.keys().hasOnly(['template_id', 'eco_fallback', 'pins', 'floors', 'rooms', 'placements', 'structure', 'appliances']) &&
         layout.template_id in ['1bhk', '2bhk', '3bhk', 'duplex', 'compact'] &&
         layout.eco_fallback is bool &&
         layout.pins is list && layout.pins.size() <= 64 &&
         (layout.pins.size() == 0 || layout.pins[0] is map) &&
         (!('floors' in layout) || (layout.floors is list && layout.floors.size() <= 8 && (layout.floors.size() == 0 || layout.floors[0] is map))) &&
         (!('rooms' in layout) || (layout.rooms is list && layout.rooms.size() <= 40 && (layout.rooms.size() == 0 || layout.rooms[0] is map))) &&
-        (!('placements' in layout) || (layout.placements is list && layout.placements.size() <= 64 && (layout.placements.size() == 0 || layout.placements[0] is map)));
+        (!('placements' in layout) || (layout.placements is list && layout.placements.size() <= 64 && (layout.placements.size() == 0 || layout.placements[0] is map))) &&
+        (!('structure' in layout) || (layout.structure is map && layout.structure.keys().hasAll(['elements']) && layout.structure.keys().hasOnly(['elements']) && layout.structure.elements is list && layout.structure.elements.size() <= 160 && (layout.structure.elements.size() == 0 || layout.structure.elements[0] is map))) &&
+        (!('appliances' in layout) || (layout.appliances is list && layout.appliances.size() <= 64 && (layout.appliances.size() == 0 || layout.appliances[0] is map)));
     }
 
     function isValidHome(data) {

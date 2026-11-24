@@ -7,7 +7,13 @@
  */
 
 import * as THREE from 'three';
-import { HomeTemplateId, Layout3DPin, Layout3DPlacement } from '@/lib/protocol/contract';
+import {
+  HomeLayout3DStructure,
+  HomeTemplateId,
+  Layout3DAppliance,
+  Layout3DPin,
+  Layout3DPlacement,
+} from '@/lib/protocol/contract';
 
 export type FloorId = string;
 export type FloorFilter = 'all' | FloorId;
@@ -66,6 +72,8 @@ export interface HomeArchitectureBlueprint {
   rooms: ArchitecturalRoomSpec[];
   pins: Layout3DPin[];
   placements?: Layout3DPlacement[];
+  structure?: HomeLayout3DStructure;
+  appliances?: Layout3DAppliance[];
   /** Approximate bounding radius for whole-house camera framing */
   houseRadius: number;
   /** Center X/Z of the footprint */
