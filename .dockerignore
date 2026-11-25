@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+.git/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+*service-account*.json
+*firebase-adminsdk*.json
+package-lock.json
+tsconfig.tsbuildinfo
