@@ -89,7 +89,7 @@ export default function DeviceDetailPage() {
         <p className="text-xs text-foreground-secondary font-mono">
           No hardware instance registered for ID &ldquo;{deviceId}&rdquo;.
         </p>
-        <Link href="/">
+        <Link href="/console">
           <Button variant="primary" size="sm">
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back to Home Dashboard</span>
@@ -179,7 +179,7 @@ export default function DeviceDetailPage() {
       <div className="sticky top-[52px] md:top-14 z-20 flex items-center justify-between gap-2 rounded-2xl border hairline-border bg-surface/90 backdrop-blur-md px-3.5 py-2.5 shadow-sm">
         <div className="flex items-center gap-2.5 min-w-0">
           <Link
-            href="/"
+            href="/console"
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-surface-elevated text-foreground-secondary hover:text-foreground transition-colors"
             aria-label="Back to Home Dashboard"
           >

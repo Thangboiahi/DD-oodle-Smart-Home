@@ -153,7 +153,9 @@ function measureSafeRail(): SafeRailMetrics {
 
 function buildRecoveryPlaybook(inc: ActiveEmergencyIncident): RecoveryPlaybook {
   const isVehicle = inc.moduleCode === 'VEH-01';
-  const inspectHref = isVehicle ? `/vehicles/${inc.deviceId}` : `/devices/${inc.deviceId}`;
+  const inspectHref = isVehicle
+    ? `/console/vehicles/${inc.deviceId}`
+    : `/console/devices/${inc.deviceId}`;
 
   switch (inc.alertType) {
     case 'OVERLOAD':
@@ -230,7 +232,7 @@ function buildRecoveryPlaybook(inc: ActiveEmergencyIncident): RecoveryPlaybook {
           'Re-publish the validated rule payload to ddoodle/{home_id}/{device_id}/rules.',
         ],
         primaryActionLabel: 'Fix Rule in Automations',
-        primaryActionHref: '/automations',
+        primaryActionHref: '/console/automations',
         secondaryAction: {
           label: `Inspect ${inc.deviceName}`,
           href: inspectHref,
@@ -255,7 +257,7 @@ function buildRecoveryPlaybook(inc: ActiveEmergencyIncident): RecoveryPlaybook {
           'If parked in an unverified location, consider arming PIN-gated Starter Interlock (< 5 km/h & ignition OFF).',
         ],
         primaryActionLabel: 'Open Live Vehicle Map',
-        primaryActionHref: '/vehicles',
+        primaryActionHref: '/console/vehicles',
         secondaryAction: {
           label: 'Call Emergency Contact',
           href: 'tel:+919876543210',
@@ -282,7 +284,7 @@ function buildRecoveryPlaybook(inc: ActiveEmergencyIncident): RecoveryPlaybook {
           'Use the 1-tap call action below to reach configured E.164 family contacts or 112 Emergency Response.',
         ],
         primaryActionLabel: isVehicle ? 'Open Vehicle Incident Map' : `Inspect ${inc.deviceName}`,
-        primaryActionHref: isVehicle ? '/vehicles' : inspectHref,
+        primaryActionHref: isVehicle ? '/console/vehicles' : inspectHref,
         secondaryAction: {
           label: 'Call 112 / Emergency Contact',
           href: 'tel:112',
@@ -622,8 +624,8 @@ export const FloatingEmergencyAlert: React.FC = () => {
   const allSilenced = activeIncidents.every((i) => Boolean(silencedAlertIds[i.id]));
   const deviceHref =
     activeIncident.moduleCode === 'VEH-01'
-      ? '/vehicles'
-      : `/devices/${activeIncident.deviceId}`;
+      ? '/console/vehicles'
+      : `/console/devices/${activeIncident.deviceId}`;
 
   const beaconX = isDragging && dragCoords ? dragCoords.x : dockedPosition?.x ?? 0;
   const beaconY = isDragging && dragCoords ? dragCoords.y : dockedPosition?.y ?? 200;

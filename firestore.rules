@@ -1,5 +1,105 @@
 rules_version = '2';
 
+// =============================================================================
+// Assumed Data Model (DD oodle Smart Home v1.4)
+// =============================================================================
+//
+// Collection: admins/{uid}
+//   - email: string (required, 3..254), role: 'installer' | 'admin' (required),
+//     createdAt: timestamp (required, immutable)
+//
+// Collection: users/{uid} (Private PII isolated to owner or admin)
+//   - name: string (1..100), phone: string (7..20),
+//     role: 'customer' | 'family' | 'family_member' | 'installer' | 'admin',
+//     home_ids: list (<= 10), emergency_contacts: list (<= 5),
+//     createdAt: timestamp (immutable), updatedAt: timestamp
+//
+// Collection: homes/{homeId}
+//   - ownerId: validId (immutable), name: string (1..80), address: string (<= 300),
+//     tariff_inr: number (0..50), hub_enabled: bool, hub_ip: string|null (<= 45),
+//     members: map (1..20 entries; ownerId -> 'owner'),
+//     subscription: map (tier, status, trial_ends_at, expires_at, dfy_3d_purchased),
+//     layout_3d: map (template_id, eco_fallback, pins[], optional floors/rooms/placements/structure/appliances),
+//     createdAt: timestamp (immutable), updatedAt: timestamp
+//
+// Subcollection: homes/{homeId}/rooms/{roomId}
+//   - name: string (1..60), icon: string (1..40), sort_order: number (0..100),
+//     createdAt: timestamp (immutable), updatedAt: timestamp
+//
+// Subcollection: homes/{homeId}/devices/{deviceId}
+//   - module_code: ^[A-Z]{3}-[0-9]{2}$ (immutable), name: string (1..80),
+//     room_id: validId, fw_version: string (1..32),
+//     operation_mode: 'CLOUD_DIRECT' | 'LOCAL_HUB' | 'LAN_ONLY' | 'BLE_ONLY' | 'FAILSAFE_MANUAL',
+//     power_restore: 'OFF' | 'ON' | 'RESTORE_LAST',
+//     local_key: string (optional, 16..128), local_pin: ^[0-9]{8}$,
+//     guardrails: map (hard_locked, max_runtime_min [5..90], dry_run_timeout_sec [10..60], voltage/current bounds),
+//     capabilities: list (1..24 maps), settings: map,
+//     createdAt: timestamp (immutable), updatedAt: timestamp
+//
+// Subcollection: homes/{homeId}/automations/{autoId}
+//   - name: string (1..80), enabled: bool, execution_target, is_recipe: bool,
+//     trigger: map, conditions: list (<= 12), actions: list (1..12),
+//     createdAt: timestamp (immutable), updatedAt: timestamp
+//
+// Collection: vehicles/{deviceId} & vehicles/{deviceId}/trips/{tripId}
+//   - Vehicle: home_id, ownerId (immutable), label, optional sim_iccid, createdAt, updatedAt
+//   - Trip: home_id, ownerId, start_ts, end_ts, distance_km, max_speed, polyline (<= 20000), createdAt
+//
+// Collection: incidents/{incidentId} (20s Crash SOS state machine)
+//   - home_id, ownerId, device_id (immutable), type, severity, lat, lng,
+//     status: 'countdown' | 'escalated' | 'cancelled_by_user' | 'resolved',
+//     notified_contacts: list (<= 10), createdAt (immutable), updatedAt
+//
+// Collection: amc_tickets/{ticketId} (Shield 24h SLA checks)
+//   - home_id, ownerId (immutable), tier, priority_24h: bool, type, status,
+//     optional scheduled_date, createdAt (immutable), updatedAt
+//
+// Collection: catalog_modules/{moduleCode} (Public catalog, Admin write)
+//   - module_code: ^[A-Z]{3}-[0-9]{2}$ (matches docId, immutable),
+//     retail_inr: number (>= 0), install_inr: number (>= 0), bom_inr: number (>= 0),
+//     availability: 'IN_STOCK' | 'PRE_ORDER' | 'COMING_SOON' | 'HIDDEN',
+//     updatedAt: timestamp
+//
+// Collection: store_config/{configId} (Public storefront pricing config, Admin write)
+//   - whatsapp_sales_number: string (7..20), dfy_3d_price_inr: number (>= 0),
+//     plus_trial_days: number (0..365), gst_percent: number (0..50),
+//     prices_include_gst: bool, global_discount_pct: number (0..80),
+//     tier_prices: map (5 tiers >= 0), tier_monthly_prices: map (5 tiers >= 0),
+//     updatedAt: timestamp
+//
+// Collection: quotes/{quoteId} (Public lead create with status='NEW'; Admin read/update/delete)
+//   - name: string (1..100), phone: string (7..20), city: string (1..80),
+//     home_type: string (1..60), items: list (<= 50), status,
+//     optional quote_ref, notes (<= 500), email, tier, source, home_id, assigned_installer_uid,
+//     optional non-negative pricing numbers & booleans, createdAt (immutable), updatedAt
+//
+// Collection: transactions/{txId} (Admin ERP Ledger)
+//   - tx_ref: string (1..64), category, amount_inr: number (non-negative except REFUND),
+//     payment_mode: 'UPI' | 'Cash' | 'Bank' | 'Card',
+//     optional quote_id, home_id, invoice_ref, notes, customer_name, gst_inr, recorded_by, tx_date,
+//     createdAt (immutable), updatedAt
+//
+// Collection: expenses/{expId} (Admin ERP Expenses)
+//   - category, amount_inr: number (>= 0), vendor: string (1..120), description: string (1..500),
+//     optional payment_mode, invoice_ref, job_id, installer_uid, recorded_by, expense_date,
+//     createdAt (immutable), updatedAt
+//
+// Collection: admin_audit_logs/{logId} (Immutable Admin Audit Trail)
+//   - actor_uid: validId (== request.auth.uid), action: string (1..80),
+//     target_collection: string (1..64), target_id: string (1..128),
+//     optional actor_email, summary (<= 500), metadata (map <= 24 keys),
+//     createdAt: timestamp (== request.time); update/delete denied
+//
+// Collection: installer_jobs/{jobId} (Scoped Installer Dispatch; active keyed by homeId + '_' + uid)
+//   - home_id: validId, installer_uid: validId,
+//     type: 'INITIAL_SETUP_LINKING' | 'FOLLOWUP_3D_SERVICE' | 'AMC_SWAP',
+//     allow_3d_setup: bool, status: 'ACTIVE' | 'COMPLETED' | 'REVOKED' | 'EXPIRED',
+//     expires_at: timestamp, linked_device_ids: list (<= 64 validIds),
+//     optional notes (<= 500), assigned_by, home_name, installer_name,
+//     createdAt (immutable), updatedAt
+//
+// =============================================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -46,10 +146,35 @@ service cloud.firestore {
         request.auth.token.email_verified == true;
     }
 
+    function hasAdminTableRole(roles) {
+      return exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('role', '') in roles;
+    }
+
+    function hasUserProfileRole(roles) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in roles;
+    }
+
     function isAdmin() {
       return isBootstrappedAdmin() || (
         isVerifiedUser() &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        hasAdminTableRole(['admin'])
+      );
+    }
+
+    function isInstaller() {
+      return isVerifiedUser() && (
+        hasAdminTableRole(['installer', 'admin']) ||
+        hasUserProfileRole(['installer', 'admin'])
+      );
+    }
+
+    function isValidOptionalNonNegNumber(data, field, maxVal) {
+      return !(field in data) || (
+        data[field] is number &&
+        data[field] >= 0 &&
+        data[field] <= maxVal
       );
     }
 
@@ -79,6 +204,26 @@ service cloud.firestore {
         (homeData.subscription.tier == 'shield' || homeData.subscription.tier == 'all_in_family');
     }
 
+    // Deterministic Scoped Installer Job Helpers (keyed by homeId + '_' + uid)
+    function getInstallerJob(homeId) {
+      return get(/databases/$(database)/documents/installer_jobs/$(homeId + '_' + request.auth.uid)).data;
+    }
+
+    function hasActiveInstallerJob(homeId) {
+      return isInstaller() &&
+        exists(/databases/$(database)/documents/installer_jobs/$(homeId + '_' + request.auth.uid)) &&
+        getInstallerJob(homeId).installer_uid == request.auth.uid &&
+        getInstallerJob(homeId).home_id == homeId &&
+        getInstallerJob(homeId).status == 'ACTIVE' &&
+        getInstallerJob(homeId).expires_at > request.time;
+    }
+
+    function hasActiveInstaller3DAuthority(homeId) {
+      return hasActiveInstallerJob(homeId) &&
+        getInstallerJob(homeId).allow_3d_setup == true &&
+        getInstallerJob(homeId).type in ['INITIAL_SETUP_LINKING', 'FOLLOWUP_3D_SERVICE'];
+    }
+
     // =========================================================================
     // Entity Validation Blueprints (Anti-Update-Gap & Hard-Locked Guardrails)
     // =========================================================================
@@ -96,7 +241,7 @@ service cloud.firestore {
         data.keys().hasOnly(['name', 'phone', 'role', 'home_ids', 'emergency_contacts', 'createdAt', 'updatedAt']) &&
         data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
         data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 20 &&
-        data.role in ['customer', 'family', 'installer', 'admin'] &&
+        data.role in ['customer', 'family', 'family_member', 'installer', 'admin'] &&
         data.home_ids is list && data.home_ids.size() <= 10 &&
         (data.home_ids.size() == 0 || (data.home_ids[0] is string && data.home_ids[0].size() <= 128)) &&
         data.emergency_contacts is list && data.emergency_contacts.size() <= 5 &&
@@ -306,6 +451,203 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidCatalogModule(data) {
+      return data.keys().hasAll([
+          'module_code', 'retail_inr', 'install_inr', 'bom_inr', 'availability', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'module_code', 'retail_inr', 'install_inr', 'bom_inr', 'availability', 'updatedAt'
+        ]) &&
+        data.module_code is string && data.module_code.size() >= 3 && data.module_code.size() <= 20 &&
+        data.module_code.matches('^[A-Z]{3}-[0-9]{2}$') &&
+        data.retail_inr is number && data.retail_inr >= 0 && data.retail_inr <= 1000000 &&
+        data.install_inr is number && data.install_inr >= 0 && data.install_inr <= 1000000 &&
+        data.bom_inr is number && data.bom_inr >= 0 && data.bom_inr <= 1000000 &&
+        data.availability in ['IN_STOCK', 'PRE_ORDER', 'COMING_SOON', 'HIDDEN'] &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTierPriceMap(m) {
+      return m is map &&
+        m.keys().hasAll(['core', 'plus', 'drive', 'shield', 'all_in_family']) &&
+        m.keys().hasOnly(['core', 'plus', 'drive', 'shield', 'all_in_family']) &&
+        m.core is number && m.core >= 0 && m.core <= 1000000 &&
+        m.plus is number && m.plus >= 0 && m.plus <= 1000000 &&
+        m.drive is number && m.drive >= 0 && m.drive <= 1000000 &&
+        m.shield is number && m.shield >= 0 && m.shield <= 1000000 &&
+        m.all_in_family is number && m.all_in_family >= 0 && m.all_in_family <= 1000000;
+    }
+
+    function isValidStoreConfig(data) {
+      return data.keys().hasAll([
+          'whatsapp_sales_number', 'dfy_3d_price_inr', 'plus_trial_days',
+          'gst_percent', 'prices_include_gst', 'global_discount_pct',
+          'tier_prices', 'tier_monthly_prices', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'whatsapp_sales_number', 'dfy_3d_price_inr', 'plus_trial_days',
+          'gst_percent', 'prices_include_gst', 'global_discount_pct',
+          'tier_prices', 'tier_monthly_prices', 'updatedAt'
+        ]) &&
+        data.whatsapp_sales_number is string &&
+        data.whatsapp_sales_number.size() >= 7 && data.whatsapp_sales_number.size() <= 20 &&
+        data.dfy_3d_price_inr is number && data.dfy_3d_price_inr >= 0 && data.dfy_3d_price_inr <= 500000 &&
+        data.plus_trial_days is number && data.plus_trial_days >= 0 && data.plus_trial_days <= 365 &&
+        data.gst_percent is number && data.gst_percent >= 0 && data.gst_percent <= 50 &&
+        data.prices_include_gst is bool &&
+        data.global_discount_pct is number && data.global_discount_pct >= 0 && data.global_discount_pct <= 80 &&
+        isValidTierPriceMap(data.tier_prices) &&
+        isValidTierPriceMap(data.tier_monthly_prices) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidQuote(data) {
+      return data.keys().hasAll([
+          'name', 'phone', 'city', 'home_type', 'items', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'quote_ref', 'name', 'phone', 'city', 'home_type', 'items', 'notes', 'status',
+          'email', 'tier', 'include_dfy_3d', 'include_install', 'prices_include_gst',
+          'hardware_inr', 'install_inr', 'dfy_3d_inr', 'subscription_inr',
+          'gst_inr', 'discount_inr', 'subtotal_inr', 'total_inr',
+          'hardware_total_inr', 'install_total_inr', 'estimated_total_inr',
+          'source', 'home_id', 'assigned_installer_uid', 'createdAt', 'updatedAt'
+        ]) &&
+        (!('quote_ref' in data) || (data.quote_ref is string && data.quote_ref.size() >= 1 && data.quote_ref.size() <= 40)) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 20 &&
+        data.city is string && data.city.size() >= 1 && data.city.size() <= 80 &&
+        data.home_type is string && data.home_type.size() >= 1 && data.home_type.size() <= 60 &&
+        data.items is list && data.items.size() <= 50 &&
+        (data.items.size() == 0 || (data.items[0] is map && data.items[0].keys().size() <= 16)) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+        data.status in ['NEW', 'CONTACTED', 'QUOTED', 'CONFIRMED', 'CONVERTED', 'LOST', 'CANCELLED', 'ARCHIVED'] &&
+        (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 254)) &&
+        (!('tier' in data) || data.tier in ['core', 'plus', 'drive', 'shield', 'all_in_family']) &&
+        (!('include_dfy_3d' in data) || data.include_dfy_3d is bool) &&
+        (!('include_install' in data) || data.include_install is bool) &&
+        (!('prices_include_gst' in data) || data.prices_include_gst is bool) &&
+        isValidOptionalNonNegNumber(data, 'hardware_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'install_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'dfy_3d_inr', 1000000) &&
+        isValidOptionalNonNegNumber(data, 'subscription_inr', 1000000) &&
+        isValidOptionalNonNegNumber(data, 'gst_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'discount_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'subtotal_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'total_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'hardware_total_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'install_total_inr', 10000000) &&
+        isValidOptionalNonNegNumber(data, 'estimated_total_inr', 10000000) &&
+        (!('source' in data) || (data.source is string && data.source.size() >= 1 && data.source.size() <= 40)) &&
+        (!('home_id' in data) || data.home_id == null || isValidId(data.home_id)) &&
+        (!('assigned_installer_uid' in data) || data.assigned_installer_uid == null || isValidId(data.assigned_installer_uid)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll([
+          'tx_ref', 'category', 'amount_inr', 'payment_mode', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'tx_ref', 'category', 'amount_inr', 'payment_mode',
+          'quote_id', 'home_id', 'invoice_ref', 'notes',
+          'customer_name', 'gst_inr', 'recorded_by', 'tx_date',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.tx_ref is string && data.tx_ref.size() >= 1 && data.tx_ref.size() <= 64 &&
+        data.category in [
+          'HARDWARE_SALE', 'INSTALLATION_FEE', 'DFY_3D_TWIN',
+          'SUBSCRIPTION_RENEWAL', 'SIM_RENEWAL', 'REFUND', 'OTHER_INCOME'
+        ] &&
+        data.amount_inr is number &&
+        data.amount_inr >= -10000000 && data.amount_inr <= 10000000 &&
+        (data.category == 'REFUND' || data.amount_inr >= 0) &&
+        data.payment_mode in ['UPI', 'Cash', 'Bank', 'Card'] &&
+        (!('quote_id' in data) || data.quote_id == null || isValidId(data.quote_id)) &&
+        (!('home_id' in data) || data.home_id == null || isValidId(data.home_id)) &&
+        (!('invoice_ref' in data) || data.invoice_ref == null || (data.invoice_ref is string && data.invoice_ref.size() <= 64)) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+        (!('customer_name' in data) || (data.customer_name is string && data.customer_name.size() <= 100)) &&
+        isValidOptionalNonNegNumber(data, 'gst_inr', 10000000) &&
+        (!('recorded_by' in data) || isValidId(data.recorded_by)) &&
+        (!('tx_date' in data) || data.tx_date is timestamp || (data.tx_date is string && data.tx_date.size() <= 40)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll([
+          'category', 'amount_inr', 'vendor', 'description', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'category', 'amount_inr', 'vendor', 'description',
+          'payment_mode', 'invoice_ref', 'job_id', 'installer_uid',
+          'recorded_by', 'expense_date', 'createdAt', 'updatedAt'
+        ]) &&
+        data.category in [
+          'HARDWARE_BOM', 'ENCLOSURE_FAB', 'SHIPPING_GST',
+          'INSTALLER_PAYOUT', 'CLOUD_MQTT_SIM', 'OPERATIONS'
+        ] &&
+        data.amount_inr is number && data.amount_inr >= 0 && data.amount_inr <= 10000000 &&
+        data.vendor is string && data.vendor.size() >= 1 && data.vendor.size() <= 120 &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 500 &&
+        (!('payment_mode' in data) || data.payment_mode in ['UPI', 'Cash', 'Bank', 'Card']) &&
+        (!('invoice_ref' in data) || data.invoice_ref == null || (data.invoice_ref is string && data.invoice_ref.size() <= 64)) &&
+        (!('job_id' in data) || data.job_id == null || isValidId(data.job_id)) &&
+        (!('installer_uid' in data) || data.installer_uid == null || isValidId(data.installer_uid)) &&
+        (!('recorded_by' in data) || isValidId(data.recorded_by)) &&
+        (!('expense_date' in data) || data.expense_date is timestamp || (data.expense_date is string && data.expense_date.size() <= 40)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll([
+          'actor_uid', 'action', 'target_collection', 'target_id', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'actor_uid', 'actor_email', 'action', 'target_collection',
+          'target_id', 'summary', 'metadata', 'createdAt'
+        ]) &&
+        isValidId(data.actor_uid) &&
+        data.actor_uid == request.auth.uid &&
+        (!('actor_email' in data) || data.actor_email == null || (data.actor_email is string && data.actor_email.size() <= 254)) &&
+        data.action is string && data.action.size() >= 1 && data.action.size() <= 80 &&
+        data.target_collection is string && data.target_collection.size() >= 1 && data.target_collection.size() <= 64 &&
+        data.target_id is string && data.target_id.size() >= 1 && data.target_id.size() <= 128 &&
+        (!('summary' in data) || (data.summary is string && data.summary.size() <= 500)) &&
+        (!('metadata' in data) || (data.metadata is map && data.metadata.keys().size() <= 24)) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidInstallerJob(data) {
+      return data.keys().hasAll([
+          'home_id', 'installer_uid', 'type', 'allow_3d_setup',
+          'status', 'expires_at', 'linked_device_ids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'home_id', 'installer_uid', 'type', 'allow_3d_setup',
+          'status', 'expires_at', 'linked_device_ids',
+          'notes', 'assigned_by', 'home_name', 'installer_name',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.home_id) &&
+        isValidId(data.installer_uid) &&
+        data.type in ['INITIAL_SETUP_LINKING', 'FOLLOWUP_3D_SERVICE', 'AMC_SWAP'] &&
+        data.allow_3d_setup is bool &&
+        data.status in ['ACTIVE', 'COMPLETED', 'REVOKED', 'EXPIRED'] &&
+        data.expires_at is timestamp &&
+        data.linked_device_ids is list && data.linked_device_ids.size() <= 64 &&
+        (data.linked_device_ids.size() == 0 || isValidId(data.linked_device_ids[0])) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+        (!('assigned_by' in data) || isValidId(data.assigned_by)) &&
+        (!('home_name' in data) || (data.home_name is string && data.home_name.size() <= 80)) &&
+        (!('installer_name' in data) || (data.installer_name is string && data.installer_name.size() <= 100)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // =========================================================================
     // Collection Rules
     // =========================================================================
@@ -349,12 +691,13 @@ service cloud.firestore {
       allow delete: if isValidId(uid) && isAdmin();
     }
 
-    // 3. Homes (Master Container + Subscription Tamper Guard)
+    // 3. Homes (Master Container + Subscription Tamper Guard + Scoped Installer 3D Authority)
     match /homes/{homeId} {
       allow get: if isSignedIn() && isValidId(homeId) && (
         isAdmin() ||
         existing().ownerId == request.auth.uid ||
-        request.auth.uid in existing().members
+        request.auth.uid in existing().members ||
+        hasActiveInstallerJob(homeId)
       );
       allow list: if isSignedIn() && (
         isAdmin() ||
@@ -382,7 +725,7 @@ service cloud.firestore {
         incoming().ownerId == existing().ownerId &&
         incoming().updatedAt == request.time &&
         (
-          // Tier 1: Admin / Installer (DFY 3D Twin delivery, subscription updates)
+          // Tier 1: Admin (DFY 3D Twin delivery, subscription updates)
           isAdmin() ||
           // Action A: Home Owner updates home profile, tariff, hub, or family members (NEVER subscription)
           (
@@ -395,14 +738,27 @@ service cloud.firestore {
           (
             existing().ownerId == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly(['layout_3d', 'updatedAt'])
+          ) ||
+          // Action C: Scoped Installer with active 3D authority updates ONLY layout_3d & updatedAt
+          (
+            hasActiveInstaller3DAuthority(homeId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['layout_3d', 'updatedAt'])
           )
         );
       allow delete: if isValidId(homeId) && isAdmin();
 
-      // 3a. Rooms Subcollection (Master Gate)
+      // 3a. Rooms Subcollection (Master Gate + Scoped Active Installer Read)
       match /rooms/{roomId} {
-        allow get: if isSignedIn() && isValidId(homeId) && isValidId(roomId) && (isAdmin() || isHomeMember(homeId));
-        allow list: if isSignedIn() && isValidId(homeId) && (isAdmin() || isHomeMember(homeId));
+        allow get: if isSignedIn() && isValidId(homeId) && isValidId(roomId) && (
+          isAdmin() ||
+          isHomeMember(homeId) ||
+          hasActiveInstallerJob(homeId)
+        );
+        allow list: if isSignedIn() && isValidId(homeId) && (
+          isAdmin() ||
+          isHomeMember(homeId) ||
+          hasActiveInstallerJob(homeId)
+        );
         allow create: if isVerifiedUser() &&
           isValidId(homeId) && isValidId(roomId) &&
           isValidRoom(incoming()) &&
@@ -424,16 +780,28 @@ service cloud.firestore {
         allow delete: if isVerifiedUser() && isValidId(homeId) && isValidId(roomId) && (isAdmin() || isHomeOwner(homeId));
       }
 
-      // 3b. Devices Subcollection (Master Gate + Hard-Locked Guardrail Enforcement)
+      // 3b. Devices Subcollection (Master Gate + Hard-Locked Guardrail Enforcement + Scoped Installer Linking)
       match /devices/{deviceId} {
-        allow get: if isSignedIn() && isValidId(homeId) && isValidId(deviceId) && (isAdmin() || isHomeMember(homeId));
-        allow list: if isSignedIn() && isValidId(homeId) && (isAdmin() || isHomeMember(homeId));
+        allow get: if isSignedIn() && isValidId(homeId) && isValidId(deviceId) && (
+          isAdmin() ||
+          isHomeMember(homeId) ||
+          hasActiveInstallerJob(homeId)
+        );
+        allow list: if isSignedIn() && isValidId(homeId) && (
+          isAdmin() ||
+          isHomeMember(homeId) ||
+          hasActiveInstallerJob(homeId)
+        );
         allow create: if isVerifiedUser() &&
           isValidId(homeId) && isValidId(deviceId) &&
           isValidDevice(incoming()) &&
           incoming().createdAt == request.time &&
           incoming().updatedAt == request.time &&
-          (isAdmin() || isHomeOwner(homeId));
+          (
+            isAdmin() ||
+            isHomeOwner(homeId) ||
+            (homeExists(homeId) && hasActiveInstallerJob(homeId))
+          );
         allow update: if isVerifiedUser() &&
           isValidId(homeId) && isValidId(deviceId) &&
           isValidDevice(incoming()) &&
@@ -448,6 +816,15 @@ service cloud.firestore {
               (!existing().guardrails.hard_locked || incoming().guardrails.hard_locked == true) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'name', 'room_id', 'operation_mode', 'power_restore', 'guardrails', 'settings', 'updatedAt'
+              ])
+            ) ||
+            (
+              // Scoped Installer with active job updates device metadata/firmware/capabilities/guardrails without unlocking hard_locked
+              hasActiveInstallerJob(homeId) &&
+              (!existing().guardrails.hard_locked || incoming().guardrails.hard_locked == true) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'name', 'room_id', 'fw_version', 'operation_mode', 'power_restore',
+                'guardrails', 'capabilities', 'settings', 'updatedAt'
               ])
             )
           );
@@ -623,6 +1000,139 @@ service cloud.firestore {
           )
         );
       allow delete: if isValidId(ticketId) && isAdmin();
+    }
+
+    // =========================================================================
+    // Commercial, Storefront & Admin ERP Collections (v1.4)
+    // =========================================================================
+
+    // 7. Live Hardware Catalog Overrides (Public storefront read; Admin write)
+    match /catalog_modules/{moduleCode} {
+      allow get, list: if true;
+      allow create: if isAdmin() &&
+        isValidId(moduleCode) &&
+        isValidCatalogModule(incoming()) &&
+        incoming().module_code == moduleCode &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(moduleCode) &&
+        isValidCatalogModule(incoming()) &&
+        incoming().module_code == moduleCode &&
+        incoming().module_code == existing().module_code &&
+        incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(moduleCode);
+    }
+
+    // 8. Storefront Config & Subscription Pricing (Public read; Admin write)
+    match /store_config/{configId} {
+      allow get, list: if true;
+      allow create: if isAdmin() &&
+        isValidId(configId) &&
+        isValidStoreConfig(incoming()) &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(configId) &&
+        isValidStoreConfig(incoming()) &&
+        incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(configId);
+    }
+
+    // 9. Storefront Lead Quotes (Public create with status == 'NEW'; Admin CRM CRUD)
+    match /quotes/{quoteId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(quoteId) &&
+        isValidQuote(incoming()) &&
+        incoming().status == 'NEW' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(quoteId) &&
+        isValidQuote(incoming()) &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(quoteId);
+    }
+
+    // 10. Admin ERP Income Transactions
+    match /transactions/{txId} {
+      allow get, list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(txId) &&
+        isValidTransaction(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(txId) &&
+        isValidTransaction(incoming()) &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(txId);
+    }
+
+    // 11. Admin ERP Operating Expenses
+    match /expenses/{expId} {
+      allow get, list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(expId) &&
+        isValidExpense(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(expId) &&
+        isValidExpense(incoming()) &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(expId);
+    }
+
+    // 12. Admin Audit Logs (Strict Append-Only Immutable Trail)
+    match /admin_audit_logs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isAdmin() &&
+        isValidId(logId) &&
+        isValidAuditLog(incoming()) &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // 13. Scoped Installer Jobs (Admin Dispatch; Scoped Installer Read & Progress Update)
+    match /installer_jobs/{jobId} {
+      allow get: if isValidId(jobId) && (
+        isAdmin() ||
+        (isInstaller() && resource != null && resource.data.installer_uid == request.auth.uid)
+      );
+      allow list: if isAdmin() || (
+        isInstaller() &&
+        resource.data.installer_uid == request.auth.uid
+      );
+      allow create: if isAdmin() &&
+        isValidId(jobId) &&
+        isValidInstallerJob(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(jobId) && (
+        (
+          isAdmin() &&
+          isValidInstallerJob(incoming()) &&
+          incoming().createdAt == existing().createdAt
+        ) ||
+        (
+          isInstaller() &&
+          resource.data.installer_uid == request.auth.uid &&
+          existing().status == 'ACTIVE' &&
+          existing().expires_at > request.time &&
+          isValidInstallerJob(incoming()) &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().home_id == existing().home_id &&
+          incoming().installer_uid == existing().installer_uid &&
+          incoming().type == existing().type &&
+          incoming().allow_3d_setup == existing().allow_3d_setup &&
+          incoming().expires_at == existing().expires_at &&
+          incoming().status in ['ACTIVE', 'COMPLETED'] &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'linked_device_ids', 'updatedAt'
+          ])
+        )
+      );
+      allow delete: if isAdmin() && isValidId(jobId);
     }
   }
 }

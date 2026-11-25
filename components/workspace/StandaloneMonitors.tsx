@@ -181,7 +181,7 @@ export const StandaloneMonitorWidget: React.FC<{
         </div>
         <div className="flex items-center justify-between text-[11px] font-mono text-foreground-secondary">
           <span>{tel?.ignition ? 'IGN ON' : 'PARKED'} · {tel?.bat_pct ?? 95}%</span>
-          <Link href="/vehicles" className="inline-flex items-center gap-0.5 text-primary hover:underline">
+          <Link href="/console/vehicles" className="inline-flex items-center gap-0.5 text-primary hover:underline">
             <span>Map</span>
             <ChevronRight className="h-3 w-3" />
           </Link>

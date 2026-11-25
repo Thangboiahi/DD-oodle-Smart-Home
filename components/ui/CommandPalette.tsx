@@ -18,6 +18,7 @@ import {
   Settings,
   Sliders,
   Sparkles,
+  Store,
   Sun,
   Wrench,
   X,
@@ -91,7 +92,7 @@ export const CommandPalette: React.FC = () => {
       subtitle: 'Rooms, Universal Layout Studio & 3D Twin',
       icon: <Home className="h-4 w-4" />,
       shortcut: 'G H',
-      onSelect: closeAnd(() => router.push('/')),
+      onSelect: closeAnd(() => router.push('/console')),
     },
     {
       id: 'nav-vehicles',
@@ -100,7 +101,7 @@ export const CommandPalette: React.FC = () => {
       subtitle: 'Live MapLibre GPS, Crash SOS & Immobilizer',
       icon: <Car className="h-4 w-4" />,
       shortcut: 'G V',
-      onSelect: closeAnd(() => router.push('/vehicles')),
+      onSelect: closeAnd(() => router.push('/console/vehicles')),
     },
     {
       id: 'nav-automations',
@@ -109,7 +110,7 @@ export const CommandPalette: React.FC = () => {
       subtitle: '1-Tap Indian Recipes & G17 Pro Logic',
       icon: <Sparkles className="h-4 w-4" />,
       shortcut: 'G A',
-      onSelect: closeAnd(() => router.push('/automations')),
+      onSelect: closeAnd(() => router.push('/console/automations')),
     },
     {
       id: 'nav-setup',
@@ -117,7 +118,7 @@ export const CommandPalette: React.FC = () => {
       label: 'Device Setup Wizard',
       subtitle: 'QR / SoftAP 192.168.4.1 / Direct BLE',
       icon: <PlusCircle className="h-4 w-4" />,
-      onSelect: closeAnd(() => router.push('/setup')),
+      onSelect: closeAnd(() => router.push('/console/setup')),
     },
     {
       id: 'nav-billing',
@@ -125,7 +126,7 @@ export const CommandPalette: React.FC = () => {
       label: 'Billing & Core Floor',
       subtitle: '90-Day Trial, UPI Renewal & Anti-Bricking Floor',
       icon: <CreditCard className="h-4 w-4" />,
-      onSelect: closeAnd(() => router.push('/billing')),
+      onSelect: closeAnd(() => router.push('/console/billing')),
     },
     {
       id: 'nav-settings',
@@ -133,15 +134,15 @@ export const CommandPalette: React.FC = () => {
       label: 'Settings & Tri-Color Studio',
       subtitle: 'Themes, Haptics, Family Roles & Voice C2C',
       icon: <Settings className="h-4 w-4" />,
-      onSelect: closeAnd(() => router.push('/settings')),
+      onSelect: closeAnd(() => router.push('/console/settings')),
     },
     {
-      id: 'nav-admin',
+      id: 'nav-store-showcase',
       group: 'Navigation',
-      label: 'Installer & Fleet Portal (/admin)',
-      subtitle: 'Fleet health, DFY 3D builder, Signed G5 OTA',
-      icon: <Wrench className="h-4 w-4" />,
-      onSelect: closeAnd(() => router.push('/admin')),
+      label: 'Explore Store & Live Demos',
+      subtitle: 'Interactive module sandboxes & WhatsApp Quote Shop',
+      icon: <Store className="h-4 w-4" />,
+      onSelect: closeAnd(() => router.push('/?showcase=1')),
     },
     {
       id: 'nav-auth',
@@ -165,7 +166,7 @@ export const CommandPalette: React.FC = () => {
           prefs.layout2D.hiddenContainers
         )} widgets/modules · ${container.kind.toUpperCase()}`,
         icon: <LayoutGrid className="h-4 w-4" />,
-        onSelect: closeAnd(() => router.push('/')),
+        onSelect: closeAnd(() => router.push('/console')),
       })),
 
     // Quick Inline Hardware & Scene Actions
@@ -222,8 +223,8 @@ export const CommandPalette: React.FC = () => {
       onSelect: closeAnd(() =>
         router.push(
           dev.module_code === 'VEH-01'
-            ? `/vehicles/${dev.device_id}`
-            : `/devices/${dev.device_id}`
+            ? `/console/vehicles/${dev.device_id}`
+            : `/console/devices/${dev.device_id}`
         )
       ),
     })),
@@ -238,7 +239,7 @@ export const CommandPalette: React.FC = () => {
       shortcut: 'E',
       onSelect: closeAnd(() => {
         setEditLayoutMode((e) => !e);
-        router.push('/');
+        router.push('/console');
       }),
     },
     {

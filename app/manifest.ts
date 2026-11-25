@@ -2,12 +2,12 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    id: '/',
+    id: '/console',
     name: 'DD oodle Smart Home',
     short_name: 'DD oodle',
     description:
       '4-Tier fail-safe Indian Smart Home & Vehicle Safety PWA with offline LAN/BLE control and Crash SOS.',
-    start_url: '/',
+    start_url: '/console',
     scope: '/',
     display: 'standalone',
     background_color: '#090b0f',

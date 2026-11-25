@@ -327,7 +327,7 @@ export default function DDoodleSmartHomeDashboard() {
 
                 <div className="pt-1 border-t hairline-border">
                   <Link
-                    href="/billing"
+                    href="/console/billing"
                     onClick={() => setActionsOpen(false)}
                     className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] text-foreground-secondary hover:bg-surface-elevated hover:text-foreground"
                   >
@@ -431,7 +431,11 @@ export default function DDoodleSmartHomeDashboard() {
                 <div className="flex items-center justify-between text-[11px] font-mono text-foreground-muted">
                   <span>LIVE TELEMETRY &amp; PACKET STREAM</span>
                   <Link
-                    href={`/devices/${inspectedDevice.device_id}`}
+                    href={
+                      inspectedDevice.module_code === 'VEH-01'
+                        ? `/console/vehicles/${inspectedDevice.device_id}`
+                        : `/console/devices/${inspectedDevice.device_id}`
+                    }
                     className="text-accent hover:underline"
                   >
                     Open Detail Page →

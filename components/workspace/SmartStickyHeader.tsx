@@ -18,6 +18,7 @@ import {
   Moon,
   Search,
   ShieldAlert,
+  Store,
   Sun,
   Volume2,
 } from 'lucide-react';
@@ -156,8 +157,8 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
   }, []);
 
   const isNestedRoute =
-    (pathname.startsWith('/devices/') && pathname !== '/devices') ||
-    (pathname.startsWith('/vehicles/') && pathname !== '/vehicles');
+    (pathname.startsWith('/console/devices/') && pathname !== '/console/devices') ||
+    (pathname.startsWith('/console/vehicles/') && pathname !== '/console/vehicles');
 
   const simWorkbenchDock = getDockPanelState('home_sim_workbench');
   const isEcoMotion = prefs.motionMode === 'eco';
@@ -182,7 +183,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
               <ArrowLeft className="h-4 w-4" />
             </button>
           ) : (
-            <Link href="/" className="md:hidden flex items-center shrink-0">
+            <Link href="/console" className="md:hidden flex items-center shrink-0">
               <DDoodleLogo size="sm" animated={!isEcoMotion} />
             </Link>
           )}
@@ -242,7 +243,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
 
                 <div className="pt-1 border-t border-border/60">
                   <Link
-                    href="/billing"
+                    href="/console/billing"
                     onClick={() => setHomeMenuOpen(false)}
                     className="flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-foreground-secondary hover:bg-surface-elevated hover:text-foreground"
                   >
@@ -345,7 +346,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
                   onClick={() => {
                     setEditLayoutMode(!editLayoutMode);
                     setQuickToolsOpen(false);
-                    if (pathname !== '/') router.push('/');
+                    if (pathname !== '/console') router.push('/console');
                   }}
                   className={cn(
                     'w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer',
@@ -367,7 +368,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent('ddoodle:toggle-home-view-mode'));
                     setQuickToolsOpen(false);
-                    if (pathname !== '/') router.push('/');
+                    if (pathname !== '/console') router.push('/console');
                   }}
                   className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated transition-colors cursor-pointer"
                 >
@@ -384,7 +385,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent('ddoodle:open-voice-modal'));
                     setQuickToolsOpen(false);
-                    if (pathname !== '/') router.push('/');
+                    if (pathname !== '/console') router.push('/console');
                   }}
                   className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated transition-colors cursor-pointer"
                 >
@@ -404,7 +405,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
                       collapsed: false,
                     });
                     setQuickToolsOpen(false);
-                    if (pathname !== '/') router.push('/');
+                    if (pathname !== '/console') router.push('/console');
                   }}
                   className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated transition-colors cursor-pointer"
                 >
@@ -414,6 +415,19 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
                   </span>
                   {simWorkbenchDock.open && <Badge variant="accent">OPEN</Badge>}
                 </button>
+
+                {/* On-Demand Public Showcase & Store */}
+                <Link
+                  href="/?showcase=1"
+                  onClick={() => setQuickToolsOpen(false)}
+                  className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-foreground hover:bg-surface-elevated transition-colors"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Store className="h-3.5 w-3.5 text-accent" />
+                    <span>Explore Store &amp; Live Demos</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-accent">→</span>
+                </Link>
 
                 {/* Alert Inbox History */}
                 <button
@@ -513,7 +527,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
                       </button>
                     ))}
                     <Link
-                      href="/settings"
+                      href="/console/settings"
                       onClick={() => setQuickToolsOpen(false)}
                       className="text-[10px] font-mono text-accent hover:underline"
                     >

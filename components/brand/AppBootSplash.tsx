@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { DDoodleLogo } from './DDoodleLogo';
-import { useWorkspace } from '@/components/workspace/WorkspaceProvider';
+import { useThemeEngine } from '@/components/theme/ThemeEngineProvider';
+import { useWorkspaceOptional } from '@/components/workspace/WorkspaceProvider';
 
 const BOOT_SESSION_KEY = 'dd_oodle_boot_v1';
 
@@ -20,7 +21,9 @@ const BOOT_STAGES = [
  * - Skippable anytime on tap or keypress.
  */
 export const AppBootSplash: React.FC = () => {
-  const { isLifeSafetyActive, prefs } = useWorkspace();
+  const { themeState } = useThemeEngine();
+  const workspace = useWorkspaceOptional();
+  const isLifeSafetyActive = workspace?.isLifeSafetyActive ?? false;
 
   const [visible, setVisible] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -53,14 +56,14 @@ export const AppBootSplash: React.FC = () => {
       } catch {
         // Ignore storage errors
       }
-    }, prefs.motionMode === 'eco' ? 350 : 950);
+    }, themeState.motionMode === 'eco' ? 350 : 950);
 
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.clearTimeout(t3);
     };
-  }, [visible, isLifeSafetyActive, prefs.motionMode]);
+  }, [visible, isLifeSafetyActive, themeState.motionMode]);
 
   // Life-Safety Bypass Rule: 0ms bypass so Crash SOS / critical modal appears immediately
   if (isLifeSafetyActive) return null;

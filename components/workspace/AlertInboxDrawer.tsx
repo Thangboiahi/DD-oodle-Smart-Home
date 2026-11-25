@@ -125,8 +125,8 @@ export const AlertInboxDrawer: React.FC<AlertInboxDrawerProps> = ({
                   const isRead = readIds.includes(al.id);
                   const targetHref =
                     al.moduleCode === 'VEH-01'
-                      ? `/vehicles/${al.deviceId}`
-                      : `/devices/${al.deviceId}`;
+                      ? `/console/vehicles/${al.deviceId}`
+                      : `/console/devices/${al.deviceId}`;
                   return (
                     <div
                       key={al.id}

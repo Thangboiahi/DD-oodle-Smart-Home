@@ -210,8 +210,8 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
           <a
             href={
               device.module_code === 'VEH-01'
-                ? `/vehicles/${device.device_id}`
-                : `/devices/${device.device_id}`
+                ? `/console/vehicles/${device.device_id}`
+                : `/console/devices/${device.device_id}`
             }
             title="Open Device Detail & Settings"
             aria-label={`Open full details for ${cardTitle}`}

@@ -345,7 +345,7 @@ export default function AutomationsPage() {
           title="Pro Logic (OR / NOT / ELSE & Cross-Module) Requires DD oodle Plus"
           description="Your Core (Free Forever) local schedules and 1-Tap Recipes remain 100% active. Upgrade to Plus (₹1,499/yr) to compile multi-branch OR/ELSE rules."
           action={
-            <Link href="/billing">
+            <Link href="/console/billing">
               <Button variant="primary" size="sm">
                 <Lock className="h-3.5 w-3.5" />
                 <span>View Plans</span>

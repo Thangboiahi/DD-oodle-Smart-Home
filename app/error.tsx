@@ -38,10 +38,10 @@ export default function GlobalRouteError({
             <RefreshCw className="h-3.5 w-3.5" />
             <span>Retry View</span>
           </Button>
-          <Link href="/">
+          <Link href="/console">
             <Button variant="secondary" touchTarget>
               <Home className="h-3.5 w-3.5" />
-              <span>Return Home</span>
+              <span>Return Console</span>
             </Button>
           </Link>
         </div>

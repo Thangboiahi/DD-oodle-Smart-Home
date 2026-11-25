@@ -20,16 +20,16 @@ export default function NotFoundPage() {
           </p>
         </div>
         <div className="flex items-center justify-center gap-2 pt-1">
-          <Link href="/">
+          <Link href="/console">
             <Button variant="primary" size="sm">
               <Home className="h-3.5 w-3.5" />
-              <span>Home Dashboard</span>
+              <span>My Console</span>
             </Button>
           </Link>
-          <Link href="/setup">
+          <Link href="/">
             <Button variant="secondary" size="sm">
               <Search className="h-3.5 w-3.5" />
-              <span>Setup Wizard</span>
+              <span>Explore Store</span>
             </Button>
           </Link>
         </div>

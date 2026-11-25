@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { WorkspaceProvider } from '@/components/workspace/WorkspaceProvider';
-import { AppShell } from '@/components/workspace/AppShell';
+import { ThemeEngineProvider } from '@/components/theme/ThemeEngineProvider';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 
 export const viewport: Viewport = {
@@ -53,11 +52,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body suppressHydrationWarning>
-        <WorkspaceProvider>
-          <ToastProvider>
-            <AppShell>{children}</AppShell>
-          </ToastProvider>
-        </WorkspaceProvider>
+        <ThemeEngineProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </ThemeEngineProvider>
       </body>
     </html>
   );

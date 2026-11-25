@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useWorkspace } from './WorkspaceProvider';
+import { useWorkspaceOptional } from './WorkspaceProvider';
 
 export interface CollapsibleSectionProps {
   sectionId: string;
@@ -40,8 +40,18 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
 }) => {
   const effectiveDefaultCollapsed =
     defaultOpen !== undefined ? !defaultOpen : defaultCollapsed;
-  const { isSectionCollapsed, toggleSectionCollapsed } = useWorkspace();
-  const collapsed = isSectionCollapsed(sectionId, effectiveDefaultCollapsed);
+  const workspace = useWorkspaceOptional();
+  const [localCollapsed, setLocalCollapsed] = useState(effectiveDefaultCollapsed);
+  const collapsed = workspace
+    ? workspace.isSectionCollapsed(sectionId, effectiveDefaultCollapsed)
+    : localCollapsed;
+  const handleToggle = () => {
+    if (workspace) {
+      workspace.toggleSectionCollapsed(sectionId, defaultCollapsed);
+    } else {
+      setLocalCollapsed((c) => !c);
+    }
+  };
 
   return (
     <section
@@ -59,7 +69,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         <button
           type="button"
           aria-expanded={!collapsed}
-          onClick={() => toggleSectionCollapsed(sectionId, defaultCollapsed)}
+          onClick={handleToggle}
           className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded"
         >
           <ChevronDown

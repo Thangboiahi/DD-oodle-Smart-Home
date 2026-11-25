@@ -14,6 +14,7 @@ import {
   Home,
   Keyboard,
   KeyRound,
+  LogOut,
   Menu,
   Moon,
   PanelLeftClose,
@@ -23,11 +24,13 @@ import {
   Settings,
   ShieldAlert,
   Sparkles,
+  Store,
   Sun,
   Wrench,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { SessionPayload } from '@/lib/auth/session';
 import { useWorkspace } from './WorkspaceProvider';
 import { StatusPill } from '@/components/connectivity/StatusPill';
 import { OfflineBanner } from '@/components/connectivity/OfflineBanner';
@@ -50,69 +53,79 @@ interface NavEntry {
   icon: React.ComponentType<{ className?: string }>;
   match: (pathname: string) => boolean;
   group: 'primary' | 'secondary';
+  adminOnly?: boolean;
 }
 
 const NAV_ITEMS: NavEntry[] = [
   {
-    href: '/',
+    href: '/console',
     label: 'Home Dashboard',
     shortLabel: 'Home',
     icon: Home,
-    match: (p) => p === '/' || p.startsWith('/devices'),
+    match: (p) => p === '/console' || p.startsWith('/console/devices'),
     group: 'primary',
   },
   {
-    href: '/vehicles',
+    href: '/console/vehicles',
     label: 'Vehicles & Safety',
     shortLabel: 'Vehicles',
     icon: Car,
-    match: (p) => p.startsWith('/vehicles'),
+    match: (p) => p.startsWith('/console/vehicles'),
     group: 'primary',
   },
   {
-    href: '/automations',
+    href: '/console/automations',
     label: 'Automations',
     shortLabel: 'Rules',
     icon: Sparkles,
-    match: (p) => p.startsWith('/automations'),
+    match: (p) => p.startsWith('/console/automations'),
     group: 'primary',
   },
   {
-    href: '/setup',
+    href: '/console/setup',
     label: 'Device Setup',
     shortLabel: 'Setup',
     icon: PlusCircle,
-    match: (p) => p.startsWith('/setup'),
+    match: (p) => p.startsWith('/console/setup'),
     group: 'secondary',
   },
   {
-    href: '/billing',
+    href: '/console/billing',
     label: 'Billing & Core Floor',
     shortLabel: 'Billing',
     icon: CreditCard,
-    match: (p) => p.startsWith('/billing'),
+    match: (p) => p.startsWith('/console/billing'),
     group: 'secondary',
   },
   {
-    href: '/settings',
+    href: '/console/settings',
     label: 'Settings',
     shortLabel: 'Settings',
     icon: Settings,
-    match: (p) => p.startsWith('/settings'),
+    match: (p) => p.startsWith('/console/settings'),
+    group: 'secondary',
+  },
+  {
+    href: '/?showcase=1',
+    label: 'Explore Store & Demos',
+    shortLabel: 'Store',
+    icon: Store,
+    match: () => false,
     group: 'secondary',
   },
   {
     href: '/admin',
-    label: 'Installer Admin',
+    label: 'Admin Command',
     shortLabel: 'Admin',
     icon: Wrench,
     match: (p) => p.startsWith('/admin'),
     group: 'secondary',
+    adminOnly: true,
   },
   {
     href: '/auth',
-    label: 'Account & Auth',
-    shortLabel: 'Auth',
+    label: 'Switch Account',
+    shortLabel: 'Account',
     icon: KeyRound,
     match: (p) => p.startsWith('/auth'),
     group: 'secondary',
@@ -120,20 +133,21 @@ const NAV_ITEMS: NavEntry[] = [
 ];
 
 function buildBreadcrumbs(pathname: string): Array<{ label: string; href: string }> {
-  if (pathname === '/') return [{ label: 'Home', href: '/' }];
+  if (pathname === '/console' || pathname === '/') return [{ label: 'Console', href: '/console' }];
   const segments = pathname.split('/').filter(Boolean);
-  const crumbs: Array<{ label: string; href: string }> = [{ label: 'Home', href: '/' }];
+  const crumbs: Array<{ label: string; href: string }> = [];
   let acc = '';
   for (const seg of segments) {
     acc += `/${seg}`;
     const labelMap: Record<string, string> = {
+      console: 'Console',
       devices: 'Devices',
       vehicles: 'Vehicles',
       automations: 'Automations',
       setup: 'Provisioning',
       billing: 'Billing',
       settings: 'Settings',
-      admin: 'Installer Admin',
+      admin: 'Admin Command',
       auth: 'Sign In',
     };
     crumbs.push({
@@ -153,8 +167,11 @@ const IMMEDIATE_CRITICAL_TYPES = new Set([
   'PANIC_SOS',
 ]);
 
-export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const pathname = usePathname() || '/';
+export const AppShell: React.FC<{
+  children: React.ReactNode;
+  session?: SessionPayload | null;
+}> = ({ children, session }) => {
+  const pathname = usePathname() || '/console';
   const router = useRouter();
   const {
     prefs,
@@ -190,7 +207,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
       if (e.key === '?') {
         e.preventDefault();
         setShortcutsOpen((s) => !s);
-      } else if (e.key.toLowerCase() === 'e' && pathname === '/') {
+      } else if (e.key.toLowerCase() === 'e' && pathname === '/console') {
         e.preventDefault();
         setEditLayoutMode((m) => !m);
       }
@@ -266,8 +283,21 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     }
   }
 
-  const primaryNav = NAV_ITEMS.filter((i) => i.group === 'primary');
-  const secondaryNav = NAV_ITEMS.filter((i) => i.group === 'secondary');
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) => !item.adminOnly || session?.role === 'admin'
+  );
+  const primaryNav = visibleNavItems.filter((i) => i.group === 'primary');
+  const secondaryNav = visibleNavItems.filter((i) => i.group === 'secondary');
+
+  const handleSignOut = async () => {
+    try {
+      await fetch('/api/auth/session', { method: 'DELETE' });
+    } catch {
+      // Ignore network error during signout
+    }
+    router.push('/auth');
+    router.refresh();
+  };
 
   const cycleTheme = () => {
     const next = prefs.theme === 'obsidian' ? 'alabaster' : prefs.theme === 'alabaster' ? 'system' : 'obsidian';
@@ -327,7 +357,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         >
           {/* Brand Header */}
           <div className="h-14 flex items-center justify-between gap-2 px-3 border-b border-border shrink-0">
-            <Link href="/" className="flex items-center gap-2.5 min-w-0">
+            <Link href="/console" className="flex items-center gap-2.5 min-w-0">
               <DDoodleLogo
                 size="sm"
                 showWordmark={!prefs.sidebarCollapsed}
@@ -416,7 +446,13 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           </nav>
 
           {/* Bottom Sidebar Footer */}
-          <div className="border-t border-border p-2 shrink-0">
+          <div className="border-t border-border p-2 space-y-1 shrink-0">
+            {!prefs.sidebarCollapsed && session && (
+              <div className="hidden lg:flex items-center justify-between px-2.5 py-1 text-[10px] font-mono text-foreground-muted">
+                <span className="truncate">{session.name}</span>
+                <span className="uppercase text-accent">{session.role === 'family_member' ? 'FAMILY' : session.role}</span>
+              </div>
+            )}
             <button
               type="button"
               onClick={cycleTheme}
@@ -439,6 +475,20 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     ? 'Alabaster Day'
                     : 'System Auto'}
                 </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              title="Sign Out"
+              className={cn(
+                'w-full flex items-center gap-2.5 rounded-[var(--dd-radius-control)] px-2.5 h-9 text-xs text-foreground-secondary hover:text-danger hover:bg-danger-soft/50 transition-colors cursor-pointer',
+                prefs.sidebarCollapsed ? 'justify-center px-0' : 'justify-center lg:justify-start'
+              )}
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              {!prefs.sidebarCollapsed && (
+                <span className="hidden lg:inline truncate text-[11px] font-medium">Sign Out</span>
               )}
             </button>
           </div>
@@ -596,7 +646,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                 <button
                   type="button"
                   onClick={cycleTheme}
-                  className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated text-xs font-medium"
+                  className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-border bg-surface-elevated text-xs font-medium cursor-pointer"
                 >
                   {prefs.theme === 'alabaster' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                   <span>Theme: {prefs.theme}</span>
@@ -607,10 +657,21 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                     setMoreDrawerOpen(false);
                     setCommandPaletteOpen(true);
                   }}
-                  className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-accent-border bg-accent-soft text-accent text-xs font-medium"
+                  className="flex-1 min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--dd-radius-control)] border border-accent-border bg-accent-soft text-accent text-xs font-medium cursor-pointer"
                 >
                   <Search className="h-4 w-4" />
                   <span>Quick Jump</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreDrawerOpen(false);
+                    void handleSignOut();
+                  }}
+                  className="min-h-[44px] px-3 flex items-center justify-center gap-1.5 rounded-[var(--dd-radius-control)] border border-danger/40 bg-danger-soft/50 text-danger text-xs font-medium cursor-pointer"
+                  aria-label="Sign Out"
+                >
+                  <LogOut className="h-4 w-4" />
                 </button>
               </div>
             </motion.div>

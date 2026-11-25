@@ -486,7 +486,7 @@ export default function DeviceSetupPage() {
                 <p className="text-foreground-secondary leading-relaxed">
                   <strong>{deviceId}</strong> ({moduleCode}) is bound to <strong>{assignedRoom}</strong>. Local Port 80 + BLE remain active forever under Core Floor.
                 </p>
-                <Link href="/">
+                <Link href="/console">
                   <Button variant="primary" size="sm">
                     <span>Return to Home Dashboard</span>
                   </Button>

@@ -27,7 +27,7 @@ export default function VehicleDetailPage() {
   return (
     <div className="space-y-3">
       <div>
-        <Link href="/vehicles">
+        <Link href="/console/vehicles">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>All Vehicles</span>
@@ -39,7 +39,7 @@ export default function VehicleDetailPage() {
         compactTopOffset
         onSelectVehicle={(nextId) => {
           if (nextId !== deviceId) {
-            router.replace(`/vehicles/${encodeURIComponent(nextId)}`);
+            router.replace(`/console/vehicles/${encodeURIComponent(nextId)}`);
           }
         }}
       />

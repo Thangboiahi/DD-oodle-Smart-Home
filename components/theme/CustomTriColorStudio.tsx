@@ -21,7 +21,7 @@ import {
   isValidHex,
   normalizeHex,
 } from './triColor';
-import { useWorkspace, BaseTheme } from '@/components/workspace/WorkspaceProvider';
+import { BaseTheme, useThemeEngine } from '@/components/theme/ThemeEngineProvider';
 import { Badge, Button, SegmentedControl, ThemedColorPicker } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
@@ -33,13 +33,13 @@ const PRESET_LIST = [
 
 export const CustomTriColorStudio: React.FC = () => {
   const {
-    prefs,
+    themeState: prefs,
     resolvedLightMode,
     activePalette,
     setTheme,
     setPalettePreset,
     setCustomPalette,
-  } = useWorkspace();
+  } = useThemeEngine();
 
   const [previewSwitchOn, setPreviewSwitchOn] = useState(true);
   const [hexDraft, setHexDraft] = useState<TriColorPalette>(prefs.customPalette);
@@ -312,7 +312,8 @@ export const CustomTriColorStudio: React.FC = () => {
  * Compact Quick Theme Popover for Top Utility Bar
  */
 export const QuickThemePopover: React.FC = () => {
-  const { prefs, resolvedLightMode, activePalette, setTheme, setPalettePreset } = useWorkspace();
+  const { themeState: prefs, resolvedLightMode, activePalette, setTheme, setPalettePreset } =
+    useThemeEngine();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -356,7 +357,7 @@ export const QuickThemePopover: React.FC = () => {
           <div className="flex items-center justify-between border-b border-border pb-2">
             <span className="text-xs font-semibold text-foreground">Quick Tri-Color Theme</span>
             <Link
-              href="/settings"
+              href="/console/settings"
               onClick={() => setOpen(false)}
               className="text-[11px] font-mono text-primary hover:underline"
             >

@@ -4,14 +4,18 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { simulatorEngine } from '@/lib/simulator/engine';
 import { SimulatorSnapshot } from '@/lib/simulator/types';
 import {
-  buildTriColorCssVars,
   DEFAULT_CUSTOM_PALETTE,
   MotionPreference,
-  resolveActivePalette,
   TriColorPalette,
   TriColorPresetId,
 } from '@/components/theme/triColor';
-import { setGlobalHapticsEnabled } from '@/components/ui/haptics';
+import {
+  AccentPreset,
+  BaseTheme,
+  UiDensity,
+  useThemeEngine,
+} from '@/components/theme/ThemeEngineProvider';
+import type { SessionRole } from '@/lib/auth/session';
 
 import {
   DEFAULT_LAYOUT_2D,
@@ -24,9 +28,7 @@ import {
   normalizeLayout2D,
 } from '@/lib/layout/tree';
 
-export type BaseTheme = 'obsidian' | 'alabaster' | 'system';
-export type AccentPreset = 'cyan' | 'emerald' | 'amber' | 'steel';
-export type UiDensity = 'comfortable' | 'compact';
+export type { AccentPreset, BaseTheme, UiDensity };
 export type WidgetSize = 'compact' | 'standard' | 'wide' | 'tall';
 export type DockPosition = 'left' | 'right' | 'bottom' | 'float';
 export {
@@ -240,38 +242,64 @@ function computeLifeSafetyStatus(snapshot: SimulatorSnapshot): {
   return { isLifeSafetyActive: false, lifeSafetyReason: null };
 }
 
-export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-  const [prefs, setPrefs] = useState<WorkspacePreferences>(DEFAULT_PREFERENCES);
+export function WorkspaceProvider({
+  children,
+  sessionRole,
+  sessionHomeId,
+}: {
+  children: React.ReactNode;
+  sessionRole?: SessionRole;
+  sessionHomeId?: string;
+}) {
+  const {
+    themeState,
+    hydrated: themeHydrated,
+    resolvedLightMode,
+    activePalette,
+    setTheme,
+    setAccent,
+    setPalettePreset,
+    setCustomPalette,
+    setMotionMode,
+    setHapticsEnabled,
+    setDensity,
+    resetThemeState,
+  } = useThemeEngine();
+
+  const [prefs, setPrefs] = useState<WorkspacePreferences>(() => ({
+    ...DEFAULT_PREFERENCES,
+    userRole: sessionRole === 'family_member' ? 'MEMBER' : 'OWNER',
+    activeHomeId: sessionHomeId || DEFAULT_PREFERENCES.activeHomeId,
+  }));
   const [hydrated, setHydrated] = useState(false);
-  const [systemPrefersLight, setSystemPrefersLight] = useState(false);
   const [snapshot, setSnapshot] = useState<SimulatorSnapshot>(() => simulatorEngine.getSnapshot());
   const [lastSyncTs, setLastSyncTs] = useState<number>(() => Date.now());
   const [editLayoutMode, setEditLayoutMode] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
-  // Hydrate persisted preferences & system color-scheme listener asynchronously on mount
+  // Hydrate persisted workspace layout/dock preferences asynchronously on mount
   useEffect(() => {
-    const media =
-      typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-        ? window.matchMedia('(prefers-color-scheme: light)')
-        : null;
-
     const timer = window.setTimeout(() => {
-      setPrefs(loadStoredPreferences());
-      if (media) setSystemPrefersLight(media.matches);
+      const stored = loadStoredPreferences();
+      setPrefs({
+        ...stored,
+        userRole:
+          sessionRole === 'family_member'
+            ? 'MEMBER'
+            : sessionRole
+            ? 'OWNER'
+            : stored.userRole,
+        activeHomeId: sessionHomeId || stored.activeHomeId,
+      });
       setHydrated(true);
     }, 0);
 
-    const onMediaChange = (ev: MediaQueryListEvent) => setSystemPrefersLight(ev.matches);
-    media?.addEventListener('change', onMediaChange);
-
     return () => {
       window.clearTimeout(timer);
-      media?.removeEventListener('change', onMediaChange);
     };
-  }, []);
+  }, [sessionRole, sessionHomeId]);
 
-  // Subscribe to simulator engine globally across all routes
+  // Subscribe to simulator engine globally inside Console / Admin shells
   useEffect(() => {
     simulatorEngine.start(1000);
     const unsubscribe = simulatorEngine.subscribe((nextSnap) => {
@@ -283,64 +311,31 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Persist non-sensitive UI preferences to localStorage (and dispatch settings sync event)
+  // Merge non-theme workspace preferences into localStorage cleanly
   useEffect(() => {
-    setGlobalHapticsEnabled(prefs.hapticsEnabled);
-    if (!hydrated || typeof window === 'undefined') return;
+    if (!hydrated || !themeHydrated || typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-      window.dispatchEvent(new CustomEvent('ddoodle:prefs-sync', { detail: prefs }));
+      const merged: WorkspacePreferences = {
+        ...prefs,
+        ...themeState,
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      window.dispatchEvent(new CustomEvent('ddoodle:prefs-sync', { detail: merged }));
     } catch {
       // Ignore quota errors in restricted browsing modes
     }
-  }, [prefs, hydrated]);
+  }, [prefs, themeState, hydrated, themeHydrated]);
 
   // Detect active life-safety critical conditions across all devices & crash SOS
   const { isLifeSafetyActive, lifeSafetyReason } = computeLifeSafetyStatus(snapshot);
-  const resolvedLightMode =
-    prefs.theme === 'alabaster' || (prefs.theme === 'system' && systemPrefersLight);
-  const activePalette = resolveActivePalette(
-    prefs.palettePreset,
-    prefs.customPalette,
-    resolvedLightMode
-  );
 
-  // Apply theme, tri-color palette, density, motion, and <meta name="theme-color">
-  // Phase 8 rule: NEVER override the full viewport with red during alerts; FloatingEmergencyAlert handles alert surfacing cleanly.
+  // Clean up any legacy root life-safety class
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const root = document.documentElement;
-    root.dataset.theme = prefs.theme;
-    root.dataset.accent = prefs.accent;
-    root.dataset.palette = prefs.palettePreset;
-    root.dataset.density = prefs.density;
-    root.dataset.motion = prefs.motionMode;
-
     delete root.dataset.lifeSafety;
     root.classList.remove('life-safety-override');
-
-    const cssVars = buildTriColorCssVars(activePalette, resolvedLightMode);
-    for (const [key, val] of Object.entries(cssVars)) {
-      root.style.setProperty(key, val);
-    }
-
-    const themeColor = resolvedLightMode ? '#f4f6f9' : '#090b0f';
-    let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.name = 'theme-color';
-      document.head.appendChild(meta);
-    }
-    meta.content = themeColor;
-  }, [
-    prefs.theme,
-    prefs.accent,
-    prefs.palettePreset,
-    prefs.density,
-    prefs.motionMode,
-    activePalette,
-    resolvedLightMode,
-  ]);
+  }, []);
 
   // Global Cmd/Ctrl+K shortcut for Command Palette
   useEffect(() => {
@@ -354,34 +349,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const setTheme = useCallback((theme: BaseTheme) => {
-    setPrefs((prev) => ({ ...prev, theme }));
-  }, []);
-
-  const setAccent = useCallback((accent: AccentPreset) => {
-    setPrefs((prev) => ({ ...prev, accent }));
-  }, []);
-
-  const setPalettePreset = useCallback((palettePreset: TriColorPresetId) => {
-    setPrefs((prev) => ({ ...prev, palettePreset }));
-  }, []);
-
-  const setCustomPalette = useCallback((customPalette: TriColorPalette) => {
-    setPrefs((prev) => ({ ...prev, palettePreset: 'custom', customPalette }));
-  }, []);
-
-  const setMotionMode = useCallback((motionMode: MotionPreference) => {
-    setPrefs((prev) => ({ ...prev, motionMode }));
-  }, []);
-
-  const setHapticsEnabled = useCallback((hapticsEnabled: boolean) => {
-    setPrefs((prev) => ({ ...prev, hapticsEnabled }));
-  }, []);
-
-  const setDensity = useCallback((density: UiDensity) => {
-    setPrefs((prev) => ({ ...prev, density }));
-  }, []);
-
   const setSidebarCollapsed = useCallback((sidebarCollapsed: boolean) => {
     setPrefs((prev) => ({ ...prev, sidebarCollapsed }));
   }, []);
@@ -390,9 +357,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setPrefs((prev) => ({ ...prev, activeHomeId }));
   }, []);
 
-  const updateWorkspacePrefs = useCallback((patch: Partial<WorkspacePreferences>) => {
-    setPrefs((prev) => ({ ...prev, ...patch }));
-  }, []);
+  const updateWorkspacePrefs = useCallback(
+    (patch: Partial<WorkspacePreferences>) => {
+      if (patch.theme !== undefined) setTheme(patch.theme);
+      if (patch.accent !== undefined) setAccent(patch.accent);
+      if (patch.palettePreset !== undefined) setPalettePreset(patch.palettePreset);
+      if (patch.customPalette !== undefined) setCustomPalette(patch.customPalette);
+      if (patch.motionMode !== undefined) setMotionMode(patch.motionMode);
+      if (patch.hapticsEnabled !== undefined) setHapticsEnabled(patch.hapticsEnabled);
+      if (patch.density !== undefined) setDensity(patch.density);
+      setPrefs((prev) => ({ ...prev, ...patch }));
+    },
+    [setTheme, setAccent, setPalettePreset, setCustomPalette, setMotionMode, setHapticsEnabled, setDensity]
+  );
 
   const setLayout2D = useCallback((layout2D: Layout2DGraph) => {
     setPrefs((prev) => ({ ...prev, layout2D }));
@@ -498,6 +475,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   );
 
   const resetWorkspacePreferences = useCallback(() => {
+    resetThemeState();
     setPrefs(DEFAULT_PREFERENCES);
     if (typeof window !== 'undefined') {
       try {
@@ -506,17 +484,25 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         // noop
       }
     }
-  }, []);
+  }, [resetThemeState]);
 
   const activeHome = useMemo(
     () => DEFAULT_HOMES.find((h) => h.id === prefs.activeHomeId) ?? DEFAULT_HOMES[0],
     [prefs.activeHomeId]
   );
 
+  const mergedPrefs = useMemo<WorkspacePreferences>(
+    () => ({
+      ...prefs,
+      ...themeState,
+    }),
+    [prefs, themeState]
+  );
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
-      prefs,
-      hydrated,
+      prefs: mergedPrefs,
+      hydrated: hydrated && themeHydrated,
       resolvedLightMode,
       activePalette,
       snapshot,
@@ -554,8 +540,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       resetWorkspacePreferences,
     }),
     [
-      prefs,
+      mergedPrefs,
       hydrated,
+      themeHydrated,
       resolvedLightMode,
       activePalette,
       snapshot,
@@ -601,4 +588,8 @@ export function useWorkspace() {
     throw new Error('useWorkspace must be used within a WorkspaceProvider');
   }
   return ctx;
+}
+
+export function useWorkspaceOptional() {
+  return useContext(WorkspaceContext);
 }

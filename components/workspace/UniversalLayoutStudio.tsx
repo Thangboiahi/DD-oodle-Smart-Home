@@ -720,7 +720,7 @@ export const UniversalLayoutStudio: React.FC<UniversalLayoutStudioProps> = ({
 
               {!layout.hiddenItems.includes('mon_water') && watDevice && watTel && (
                 <Link
-                  href={`/devices/${watDevice.device_id}`}
+                  href={`/console/devices/${watDevice.device_id}`}
                   className="snap-start shrink-0 flex items-center gap-2.5 rounded-xl border hairline-border bg-surface px-3 py-1.5 min-w-[155px] hover:border-border-strong transition-colors"
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
@@ -740,7 +740,7 @@ export const UniversalLayoutStudio: React.FC<UniversalLayoutStudioProps> = ({
 
               {!layout.hiddenItems.includes('mon_vehicle') && vehDevice && vehTel && (
                 <Link
-                  href="/vehicles"
+                  href="/console/vehicles"
                   className="snap-start shrink-0 flex items-center gap-2.5 rounded-xl border hairline-border bg-surface px-3 py-1.5 min-w-[160px] hover:border-border-strong transition-colors"
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
@@ -760,7 +760,7 @@ export const UniversalLayoutStudio: React.FC<UniversalLayoutStudioProps> = ({
 
               {!layout.hiddenItems.includes('mon_hub') && hubDevice && (
                 <Link
-                  href={`/devices/${hubDevice.device_id}`}
+                  href={`/console/devices/${hubDevice.device_id}`}
                   className="snap-start shrink-0 flex items-center gap-2.5 rounded-xl border hairline-border bg-surface px-3 py-1.5 min-w-[150px] hover:border-border-strong transition-colors"
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">

@@ -38,7 +38,8 @@ import {
 } from '@/lib/protocol/contract';
 import { ResolvedEntitlements } from '@/lib/entitlements/resolver';
 import { VirtualDeviceInstance } from '@/lib/simulator/types';
-import { useWorkspace } from '@/components/workspace/WorkspaceProvider';
+import { useThemeEngine } from '@/components/theme/ThemeEngineProvider';
+import { useWorkspaceOptional } from '@/components/workspace/WorkspaceProvider';
 import {
   ArchitecturalRoomSpec,
   FloorFilter,
@@ -158,10 +159,12 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
   onInspectDevice,
   onExitTo2D,
 }) => {
-  const { resolvedLightMode, prefs } = useWorkspace();
-  const tariffInr = prefs.tariffInr;
-  const resolvedHomeId = homeId ?? prefs.activeHomeId ?? 'home_imphal_001';
-  const allowCustomize = canCustomize ?? (isAdminInstaller || prefs.userRole === 'OWNER');
+  const { resolvedLightMode } = useThemeEngine();
+  const workspace = useWorkspaceOptional();
+  const tariffInr = workspace?.prefs.tariffInr ?? 7.5;
+  const resolvedHomeId = homeId ?? workspace?.prefs.activeHomeId ?? 'home_imphal_001';
+  const allowCustomize =
+    canCustomize ?? (isAdminInstaller || (workspace?.prefs.userRole ?? 'OWNER') === 'OWNER');
 
   const shellRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -3258,8 +3261,8 @@ export const Home3DTwinView: React.FC<Home3DTwinViewProps> = ({
                     <Link
                       href={
                         selectedDev.module_code === 'VEH-01'
-                          ? `/vehicles/${selectedDev.device_id}`
-                          : `/devices/${selectedDev.device_id}`
+                          ? `/console/vehicles/${selectedDev.device_id}`
+                          : `/console/devices/${selectedDev.device_id}`
                       }
                       className="inline-flex h-7 items-center gap-1 rounded-full bg-accent px-2.5 text-[11px] font-semibold text-[var(--dd-accent-fg)] hover:opacity-90 shrink-0"
                     >
