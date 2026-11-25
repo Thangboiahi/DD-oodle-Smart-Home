@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Ban, CheckCircle2, Clock, Send, ShieldCheck, Users, Wrench } from 'lucide-react';
 import { SessionRole } from '@/lib/auth/session';
 import { InstallerJobType } from '@/lib/installer/jobsStore';
@@ -46,6 +46,16 @@ export function AdminUsersJobsTab({
   const [jobNotes, setJobNotes] = useState(
     'Install Switchboards, Tank Monitor, and verify G10 safety cutoffs.'
   );
+  const [nowMs, setNowMs] = useState(0);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setNowMs(Date.now()), 0);
+    const iv = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => {
+      window.clearTimeout(t);
+      window.clearInterval(iv);
+    };
+  }, []);
 
   const handleDispatchJob = async () => {
     const inst = installers.find((i) => i.uid === selectedInstallerUid) ?? installers[0];
@@ -196,7 +206,7 @@ export function AdminUsersJobsTab({
 
           <CardContent className="space-y-2.5 text-xs">
             {jobs.map((job) => {
-              const isActive = job.status === 'ACTIVE' && job.expiresAtMs > Date.now();
+              const isActive = job.status === 'ACTIVE' && (nowMs === 0 || job.expiresAtMs > nowMs);
               return (
                 <div
                   key={job.job_id}

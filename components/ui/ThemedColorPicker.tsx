@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, Pipette, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+const emptySubscribe = () => () => {};
 
 export interface ThemedColorPickerProps {
   value: string;
@@ -88,7 +90,11 @@ export const ThemedColorPicker: React.FC<ThemedColorPickerProps> = ({
   className,
 }) => {
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
   const [coords, setCoords] = useState<{ top: number; left: number; openUp: boolean }>({
     top: 0,
     left: 0,
@@ -100,10 +106,6 @@ export const ThemedColorPicker: React.FC<ThemedColorPickerProps> = ({
 
   const safeHex = /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#06b6d4';
   const hsl = hexToHsl(safeHex);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const syncPosition = () => {
     const el = triggerRef.current;

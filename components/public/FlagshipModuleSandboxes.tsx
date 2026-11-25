@@ -47,7 +47,6 @@ export const FlagshipModuleSandboxes: React.FC = () => {
   const [pwr03On, setPwr03On] = useState<boolean>(true);
   const [pwr03Fault, setPwr03Fault] = useState<string | null>(null);
   const [pwr03HoldPct, setPwr03HoldPct] = useState<number>(0);
-  const pwr03HoldTimerRef = useRef<number | null>(null);
 
   // 4. WAT-01: Overhead Tank + 30s Dry-Run Cutoff
   const [pumpOn, setPumpOn] = useState<boolean>(true);
@@ -55,7 +54,10 @@ export const FlagshipModuleSandboxes: React.FC = () => {
   const [flowLpm, setFlowLpm] = useState<number>(18.4);
   const [watFault, setWatFault] = useState<string | null>(null);
   const [watHoldPct, setWatHoldPct] = useState<number>(0);
-  const watHoldTimerRef = useRef<number | null>(null);
+  const holdTimersRef = useRef<{ pwr03: number | null; wat: number | null }>({
+    pwr03: null,
+    wat: null,
+  });
 
   // 5. VEH-01: 6.4G Crash 20s Countdown + G15b Starter Lock
   const [vehSpeed, setVehSpeed] = useState<number>(42);
@@ -97,28 +99,33 @@ export const FlagshipModuleSandboxes: React.FC = () => {
 
   // Cleanup all hold timers on unmount (strict leak prevention on exit)
   useEffect(() => {
+    const timers = holdTimersRef.current;
     return () => {
-      if (pwr03HoldTimerRef.current) window.clearInterval(pwr03HoldTimerRef.current);
-      if (watHoldTimerRef.current) window.clearInterval(watHoldTimerRef.current);
+      if (timers.pwr03) window.clearInterval(timers.pwr03);
+      if (timers.wat) window.clearInterval(timers.wat);
     };
   }, []);
 
   // Physical 3-second hold-to-clear handler for G10 Latched Faults
   const startPhysicalHoldClear = (
-    timerRef: React.MutableRefObject<number | null>,
+    slot: 'pwr03' | 'wat',
     setPct: React.Dispatch<React.SetStateAction<number>>,
     onCleared: () => void
   ) => {
-    if (timerRef.current) window.clearInterval(timerRef.current);
+    if (holdTimersRef.current[slot]) {
+      window.clearInterval(holdTimersRef.current[slot]!);
+    }
     const startedAt = Date.now();
     const holdMs = SAFETY_CONSTANTS.LATCHED_FAULT_CLEAR_HOLD_SEC * 1000;
-    timerRef.current = window.setInterval(() => {
+    holdTimersRef.current[slot] = window.setInterval(() => {
       const elapsed = Date.now() - startedAt;
       const pct = Math.min(100, Math.round((elapsed / holdMs) * 100));
       setPct(pct);
       if (pct >= 100) {
-        if (timerRef.current) window.clearInterval(timerRef.current);
-        timerRef.current = null;
+        if (holdTimersRef.current[slot]) {
+          window.clearInterval(holdTimersRef.current[slot]!);
+        }
+        holdTimersRef.current[slot] = null;
         setPct(0);
         onCleared();
       }
@@ -126,12 +133,12 @@ export const FlagshipModuleSandboxes: React.FC = () => {
   };
 
   const cancelPhysicalHold = (
-    timerRef: React.MutableRefObject<number | null>,
+    slot: 'pwr03' | 'wat',
     setPct: React.Dispatch<React.SetStateAction<number>>
   ) => {
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (holdTimersRef.current[slot]) {
+      window.clearInterval(holdTimersRef.current[slot]!);
+      holdTimersRef.current[slot] = null;
     }
     setPct(0);
   };
@@ -374,13 +381,13 @@ export const FlagshipModuleSandboxes: React.FC = () => {
               <button
                 type="button"
                 onPointerDown={() =>
-                  startPhysicalHoldClear(pwr03HoldTimerRef, setPwr03HoldPct, () => {
+                  startPhysicalHoldClear('pwr03', setPwr03HoldPct, () => {
                     setPwr03Fault(null);
                   })
                 }
-                onPointerUp={() => cancelPhysicalHold(pwr03HoldTimerRef, setPwr03HoldPct)}
-                onPointerLeave={() => cancelPhysicalHold(pwr03HoldTimerRef, setPwr03HoldPct)}
-                onPointerCancel={() => cancelPhysicalHold(pwr03HoldTimerRef, setPwr03HoldPct)}
+                onPointerUp={() => cancelPhysicalHold('pwr03', setPwr03HoldPct)}
+                onPointerLeave={() => cancelPhysicalHold('pwr03', setPwr03HoldPct)}
+                onPointerCancel={() => cancelPhysicalHold('pwr03', setPwr03HoldPct)}
                 className="relative w-full min-h-[40px] rounded-xl border border-danger bg-surface text-foreground font-mono text-[11px] font-semibold overflow-hidden cursor-pointer select-none"
               >
                 <span
@@ -473,14 +480,14 @@ export const FlagshipModuleSandboxes: React.FC = () => {
             <button
               type="button"
               onPointerDown={() =>
-                startPhysicalHoldClear(watHoldTimerRef, setWatHoldPct, () => {
+                startPhysicalHoldClear('wat', setWatHoldPct, () => {
                   setWatFault(null);
                   setFlowLpm(18.4);
                 })
               }
-              onPointerUp={() => cancelPhysicalHold(watHoldTimerRef, setWatHoldPct)}
-              onPointerLeave={() => cancelPhysicalHold(watHoldTimerRef, setWatHoldPct)}
-              onPointerCancel={() => cancelPhysicalHold(watHoldTimerRef, setWatHoldPct)}
+              onPointerUp={() => cancelPhysicalHold('wat', setWatHoldPct)}
+              onPointerLeave={() => cancelPhysicalHold('wat', setWatHoldPct)}
+              onPointerCancel={() => cancelPhysicalHold('wat', setWatHoldPct)}
               className="relative w-full min-h-[40px] rounded-xl border border-danger bg-surface text-foreground font-mono text-[11px] font-semibold overflow-hidden cursor-pointer select-none"
             >
               <span

@@ -1,10 +1,26 @@
 'use client';
 
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+const emptySubscribe = () => () => {};
+const subscribeMobileMedia = (onChange: () => void) => {
+  const mq = window.matchMedia('(max-width: 639px)');
+  mq.addEventListener('change', onChange);
+  return () => mq.removeEventListener('change', onChange);
+};
+const getMobileSnapshot = () => window.matchMedia('(max-width: 639px)').matches;
 
 export interface ThemedSelectOption {
   value: string;
@@ -56,8 +72,16 @@ export const ThemedSelect: React.FC<ThemedSelectProps> = ({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isMobile, setIsMobile] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const isMobile = useSyncExternalStore(
+    subscribeMobileMedia,
+    getMobileSnapshot,
+    () => false
+  );
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
   const [popoverCoords, setPopoverCoords] = useState<{
     top: number;
     left: number;
@@ -89,16 +113,7 @@ export const ThemedSelect: React.FC<ThemedSelectProps> = ({
     );
   }, [options, query, shouldSearch]);
 
-  useEffect(() => {
-    setMounted(true);
-    const mq = window.matchMedia('(max-width: 639px)');
-    const sync = () => setIsMobile(mq.matches);
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
-  }, []);
-
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     const el = triggerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -112,13 +127,11 @@ export const ThemedSelect: React.FC<ThemedSelectProps> = ({
     const left = Math.max(12, Math.min(rawLeft, window.innerWidth - width - 12));
     const top = openUp ? rect.top - 6 : rect.bottom + 6;
     setPopoverCoords({ top, left, width, openUp });
-  };
+  }, [align]);
 
   useEffect(() => {
     if (!open) return;
     updatePosition();
-    const idx = filtered.findIndex((o) => o.value === value);
-    setActiveIndex(idx >= 0 ? idx : 0);
 
     if (shouldSearch) {
       window.setTimeout(() => searchInputRef.current?.focus(), 40);
@@ -177,7 +190,7 @@ export const ThemedSelect: React.FC<ThemedSelectProps> = ({
       window.removeEventListener('resize', onViewportChange);
       window.removeEventListener('scroll', onViewportChange, true);
     };
-  }, [open, filtered, activeIndex, value, isMobile, shouldSearch, onChange]);
+  }, [open, filtered, activeIndex, isMobile, shouldSearch, onChange, updatePosition]);
 
   const sizeClass =
     size === 'xs'
@@ -308,6 +321,10 @@ export const ThemedSelect: React.FC<ThemedSelectProps> = ({
         aria-label={ariaLabel ?? label ?? placeholder}
         onClick={() => {
           if (!disabled) {
+            if (!open) {
+              const idx = filtered.findIndex((o) => o.value === value);
+              setActiveIndex(idx >= 0 ? idx : 0);
+            }
             setOpen((prev) => !prev);
           }
         }}

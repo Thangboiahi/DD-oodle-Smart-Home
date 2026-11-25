@@ -13,6 +13,7 @@ import {
   CreditCard,
   Eye,
   FileCheck,
+  FileText,
   Filter,
   HardDrive,
   MessageCircle,
@@ -23,6 +24,7 @@ import {
   ShieldCheck,
   Sparkles,
   Tag,
+  TrendingUp,
   Upload,
   Users,
 } from 'lucide-react';
@@ -43,6 +45,8 @@ import { AdminPricingTab } from './AdminPricingTab';
 import { AdminBillingDevicesTab, AmcTicketItem } from './AdminBillingDevicesTab';
 import { AdminUsersJobsTab } from './AdminUsersJobsTab';
 import { AdminQuotesTab } from './AdminQuotesTab';
+import { AdminFinanceLedger } from './AdminFinanceLedger';
+import { AdminAuditLogPanel } from './AdminAuditLogPanel';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import {
   Badge,
@@ -81,6 +85,8 @@ type AdminTab =
   | 'pricing'
   | 'billing_amc'
   | 'users_jobs'
+  | 'finance'
+  | 'audit'
   | 'onboarding'
   | 'ota';
 
@@ -403,6 +409,16 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
               icon: <Users className="h-3.5 w-3.5" />,
             },
             {
+              value: 'finance',
+              label: 'Finance & P&L',
+              icon: <TrendingUp className="h-3.5 w-3.5" />,
+            },
+            {
+              value: 'audit',
+              label: 'Audit Logs',
+              icon: <FileText className="h-3.5 w-3.5" />,
+            },
+            {
               value: 'onboarding',
               label: '3D Builder',
               icon: <Box className="h-3.5 w-3.5" />,
@@ -416,7 +432,7 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
         />
       </div>
 
-      {/* NEW MODULES: QUOTES, PRICING, PLANS/DEVICES, USERS/JOBS */}
+      {/* NEW MODULES: QUOTES, PRICING, PLANS/DEVICES, USERS/JOBS, FINANCE, AUDIT */}
       {activeTab === 'quotes' && <AdminQuotesTab actor={actor} />}
       {activeTab === 'pricing' && <AdminPricingTab actor={actor} />}
       {activeTab === 'billing_amc' && (
@@ -433,6 +449,8 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
         />
       )}
       {activeTab === 'users_jobs' && <AdminUsersJobsTab actor={actor} />}
+      {activeTab === 'finance' && <AdminFinanceLedger actor={actor} />}
+      {activeTab === 'audit' && <AdminAuditLogPanel />}
 
       {/* FLEET HEALTH & DIAGNOSTICS */}
       {activeTab === 'fleet' && (

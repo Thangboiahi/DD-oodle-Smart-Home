@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { Calendar, ChevronLeft, ChevronRight, Clock, Minus, Plus, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+const emptySubscribe = () => () => {};
 
 export interface ThemedTimePickerProps {
   value: string; // HH:MM
@@ -27,7 +29,11 @@ export const ThemedTimePicker: React.FC<ThemedTimePickerProps> = ({
   className,
 }) => {
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
   const [coords, setCoords] = useState<{ top: number; left: number; openUp: boolean }>({
     top: 0,
     left: 0,
@@ -42,10 +48,6 @@ export const ThemedTimePicker: React.FC<ThemedTimePickerProps> = ({
 
   const formatTime = (h: number, m: number) =>
     `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const syncPos = () => {
     const el = triggerRef.current;
@@ -274,7 +276,11 @@ export const ThemedDatePicker: React.FC<ThemedDatePickerProps> = ({
   className,
 }) => {
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
   const [coords, setCoords] = useState<{ top: number; left: number; openUp: boolean }>({
     top: 0,
     left: 0,
@@ -296,10 +302,6 @@ export const ThemedDatePicker: React.FC<ThemedDatePickerProps> = ({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   const syncPos = () => {
     const el = triggerRef.current;
     if (!el) return;
@@ -314,8 +316,6 @@ export const ThemedDatePicker: React.FC<ThemedDatePickerProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    setViewYear(parsedInitial.year);
-    setViewMonth(parsedInitial.month);
     syncPos();
     const onOutside = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -333,7 +333,7 @@ export const ThemedDatePicker: React.FC<ThemedDatePickerProps> = ({
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', syncPos);
     };
-  }, [open, parsedInitial.year, parsedInitial.month]);
+  }, [open]);
 
   const firstDayOffset = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -357,7 +357,13 @@ export const ThemedDatePicker: React.FC<ThemedDatePickerProps> = ({
         type="button"
         aria-label={ariaLabel}
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open) {
+            setViewYear(parsedInitial.year);
+            setViewMonth(parsedInitial.month);
+          }
+          setOpen((o) => !o);
+        }}
         className={cn(
           'h-9 flex items-center gap-2 rounded-[var(--dd-radius-control)] border border-border bg-surface hover:border-border-strong px-2.5 font-mono text-xs text-foreground tabular-nums cursor-pointer',
           open && 'border-accent ring-1 ring-accent/40'

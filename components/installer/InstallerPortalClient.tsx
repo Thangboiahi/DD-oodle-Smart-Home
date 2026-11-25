@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Box,
@@ -81,6 +81,16 @@ export function InstallerPortalClient({ session }: { session: SessionPayload }) 
   const [g1Verified, setG1Verified] = useState(false);
   const [g10SafetyChecked, setG10SafetyChecked] = useState(false);
   const [show3DBuilder, setShow3DBuilder] = useState(false);
+  const [nowMs, setNowMs] = useState(0);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setNowMs(Date.now()), 0);
+    const iv = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => {
+      window.clearTimeout(t);
+      window.clearInterval(iv);
+    };
+  }, []);
 
   const spec = getHardwareModule(moduleCode);
   const allow3D = activeJob ? canJobAccess3DStudio(activeJob) : false;
@@ -166,7 +176,7 @@ export function InstallerPortalClient({ session }: { session: SessionPayload }) 
                 const selected = activeJob?.job_id === job.job_id;
                 const hoursLeft = Math.max(
                   1,
-                  Math.ceil((job.expiresAtMs - Date.now()) / (60 * 60 * 1000))
+                  nowMs > 0 ? Math.ceil((job.expiresAtMs - nowMs) / (60 * 60 * 1000)) : 24
                 );
                 const jobHas3D = canJobAccess3DStudio(job);
 
