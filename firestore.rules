@@ -521,7 +521,7 @@ service cloud.firestore {
         data.items is list && data.items.size() <= 50 &&
         (data.items.size() == 0 || (data.items[0] is map && data.items[0].keys().size() <= 16)) &&
         (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
-        data.status in ['NEW', 'CONTACTED', 'QUOTED', 'CONFIRMED', 'CONVERTED', 'LOST', 'CANCELLED', 'ARCHIVED'] &&
+        data.status in ['NEW', 'CONTACTED', 'APPROVED', 'QUOTED', 'CONFIRMED', 'CONVERTED', 'LOST', 'CANCELLED', 'ARCHIVED'] &&
         (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 254)) &&
         (!('tier' in data) || data.tier in ['core', 'plus', 'drive', 'shield', 'all_in_family']) &&
         (!('include_dfy_3d' in data) || data.include_dfy_3d is bool) &&
