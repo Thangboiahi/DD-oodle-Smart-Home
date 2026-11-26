@@ -4,13 +4,14 @@ import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { MotionConfig } from 'motion/react';
-import { ArrowLeft, KeyRound, Menu, Moon, ShoppingBag, Sun, X } from 'lucide-react';
+import { ArrowLeft, KeyRound, LogOut, Menu, Moon, ShoppingBag, Sun, X } from 'lucide-react';
 import { getPortalPathForRole, SessionPayload } from '@/lib/auth/session';
 import { useThemeEngine } from '@/components/theme/ThemeEngineProvider';
 import { DDoodleLogo } from '@/components/brand/DDoodleLogo';
 import { TRI_COLOR_PRESETS } from '@/components/theme/triColor';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { IframeTokenSyncBridge, performCleanSignOut } from '@/components/auth/IframeSessionBridge';
 
 function FloatingBackToConsolePill({
   portalHref,
@@ -27,9 +28,9 @@ function FloatingBackToConsolePill({
   return (
     <div className="fixed bottom-4 right-4 z-50">
       <Link href={portalHref}>
-        <Button variant="primary" size="sm" className="shadow-2xl rounded-full px-4">
+        <Button variant="primary" size="sm" className="shadow-2xl rounded-xl px-4 border border-primary-border">
           <ArrowLeft className="h-3.5 w-3.5" />
-          <span>Back to My Console</span>
+          <span>Return to My Console</span>
         </Button>
       </Link>
     </div>
@@ -49,6 +50,10 @@ export function PublicShell({
 
   const portalHref = session ? getPortalPathForRole(session.role) : '/auth';
 
+  const handleSignOut = async () => {
+    await performCleanSignOut('/auth');
+  };
+
   const navLinks = [
     { href: '/#live-demos', label: 'Live Demos' },
     { href: '/#fail-safe', label: 'Fail-Safe' },
@@ -60,11 +65,14 @@ export function PublicShell({
   return (
     <MotionConfig reducedMotion={themeState.motionMode === 'fluid' ? 'user' : 'always'}>
       <div className="min-h-screen bg-canvas text-foreground flex flex-col">
+        <Suspense fallback={null}>
+          <IframeTokenSyncBridge />
+        </Suspense>
         {/* Minimal Sticky Storefront Navbar */}
         <header className="sticky top-0 z-40 h-14 border-b border-border/80 bg-[var(--dd-surface-0)]/94 backdrop-blur-md">
           <div className="mx-auto max-w-6xl h-full px-3 sm:px-5 flex items-center justify-between gap-2">
             <Link href={session ? '/?showcase=1' : '/'} className="flex items-center gap-2 shrink-0">
-              <DDoodleLogo size="sm" animated={themeState.motionMode === 'fluid'} />
+              <DDoodleLogo size="sm" showWordmark animated={themeState.motionMode === 'fluid'} />
             </Link>
 
             <nav aria-label="Storefront Navigation" className="hidden md:flex items-center gap-1">
@@ -130,6 +138,18 @@ export function PublicShell({
                   <span>{session ? 'Back to Console' : 'My Console'}</span>
                 </Button>
               </Link>
+
+              {session && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleSignOut()}
+                  title="Sign Out"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </Button>
+              )}
 
               <button
                 type="button"

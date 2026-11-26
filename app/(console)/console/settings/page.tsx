@@ -560,6 +560,40 @@ export default function SettingsPage() {
           </div>
         </div>
       </CollapsibleSection>
+
+      {/* 6. Unified Full-Stack Demo Workspace Reset Utility (Phase 13B) */}
+      <div className="rounded-[var(--dd-radius-card)] bg-surface/80 hairline-border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-foreground">
+              Canonical Demo Workspace Spine (v1.4 · Phase 13B)
+            </span>
+            <Badge variant="accent">LIVE SYNC</Badge>
+          </div>
+          <p className="text-[11px] text-foreground-secondary">
+            Restore Lamka Smart Residence &amp; Imphal Duplex, all 12 Phase 1–3 interactive devices,
+            42-module catalog, quotes, installer jobs, and 2D/3D layout defaults across all open tabs.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={async () => {
+            const { resetDemoWorkspace } = await import('@/lib/data/unifiedStore');
+            await resetDemoWorkspace();
+            resetWorkspacePreferences();
+            pushToast({
+              title: 'Demo Workspace Restored to Canonical Seed',
+              description:
+                'Lamka Smart Residence + Imphal Duplex and all 12 live modules have been reset across all portals.',
+              tone: 'success',
+            });
+          }}
+        >
+          <RotateCcw className="h-3.5 w-3.5 text-accent" />
+          <span>Reset Demo Workspace</span>
+        </Button>
+      </div>
     </div>
   );
 }

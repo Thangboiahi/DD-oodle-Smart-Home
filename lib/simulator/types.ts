@@ -10,6 +10,7 @@ import {
   DeviceAlertPayload,
   DeviceInfoPayload,
   DeviceLwtStatus,
+  ModuleCode,
   MqttTopicChannel,
   OperationMode,
   OtaPayload,
@@ -22,7 +23,7 @@ import { ActiveTransportTier } from '../protocol/transports';
 
 export interface VirtualDeviceInstance {
   device_id: string;
-  module_code: Phase1ModuleCode;
+  module_code: ModuleCode;
   room_id: string;
   name: string;
   local_pin: string;

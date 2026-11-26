@@ -12,6 +12,7 @@
  */
 
 import fixtures from '../../contract/contract_v1.4_fixtures.json';
+import { buildCanonicalDevices } from '../data/canonicalSeed';
 import {
   AlertType,
   buildMqttTopic,
@@ -23,6 +24,7 @@ import {
   evaluateStarterInterlockSafety,
   ImmobilizeState,
   HubTelemetryPayload,
+  ModuleCode,
   OperationMode,
   Phase1ActiveAlertType,
   Phase1ModuleCode,
@@ -89,40 +91,7 @@ export class VirtualDeviceSimulatorEngine {
   }
 
   private hydrateFromFixtures(): Record<string, VirtualDeviceInstance> {
-    const out: Record<string, VirtualDeviceInstance> = {};
-    const entries = Object.values(fixtures.modules) as unknown as Array<{
-      device_id: string;
-      room_id: string;
-      name: string;
-      local_pin: string;
-      status: 'online' | 'offline';
-      info: VirtualDeviceInstance['info'];
-      state: VirtualDeviceInstance['state'];
-      telemetry: VirtualDeviceInstance['telemetry'];
-      config: VirtualDeviceInstance['config'];
-      rules: VirtualDeviceInstance['rules'];
-      ota: VirtualDeviceInstance['ota'];
-      alert?: DeviceAlertPayload;
-    }>;
-
-    for (const mod of entries) {
-      out[mod.device_id] = {
-        device_id: mod.device_id,
-        module_code: mod.info.module_code as Phase1ModuleCode,
-        room_id: mod.room_id,
-        name: mod.name,
-        local_pin: mod.local_pin,
-        status: mod.status,
-        info: structuredClone(mod.info),
-        state: structuredClone(mod.state),
-        telemetry: structuredClone(mod.telemetry),
-        config: structuredClone(mod.config),
-        rules: structuredClone(mod.rules),
-        ota: structuredClone(mod.ota),
-        last_alert: mod.alert ? structuredClone(mod.alert) : null,
-      };
-    }
-    return out;
+    return buildCanonicalDevices();
   }
 
   public subscribe(listener: SimulatorListener): () => void {
@@ -187,6 +156,30 @@ export class VirtualDeviceSimulatorEngine {
     this.faults = { ...this.faults, ...patch };
     this.recomputeActiveTransport();
     this.emit();
+  }
+
+  public registerOrUpdateDevice(instance: VirtualDeviceInstance): void {
+    this.devices[instance.device_id] = structuredClone(instance);
+    this.logPacket(
+      'SYSTEM',
+      'info',
+      buildMqttTopic(this.homeId, instance.device_id, 'info'),
+      instance.info
+    );
+    this.emit();
+  }
+
+  public syncExternalDevices(externalDevices: Record<string, VirtualDeviceInstance>): void {
+    let added = false;
+    for (const [id, dev] of Object.entries(externalDevices)) {
+      if (!this.devices[id]) {
+        this.devices[id] = structuredClone(dev);
+        added = true;
+      }
+    }
+    if (added) {
+      this.emit();
+    }
   }
 
   public setTransportModeOverride(mode: OperationMode): void {

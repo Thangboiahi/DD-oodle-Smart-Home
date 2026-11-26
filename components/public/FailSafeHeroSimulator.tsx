@@ -19,6 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { OperationMode } from '@/lib/protocol/contract';
+import { DDoodleLogo } from '@/components/brand/DDoodleLogo';
 import { Badge, Button, TactileSwitch } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
@@ -105,7 +106,8 @@ export const FailSafeHeroSimulator: React.FC = () => {
           transition={{ duration: 0.32, ease: 'easeOut' }}
           className="lg:col-span-6 space-y-5"
         >
-          <div className="inline-flex flex-wrap items-center gap-2">
+          <div className="inline-flex flex-wrap items-center gap-2.5">
+            <DDoodleLogo size="md" animated />
             <Badge variant="accent">PROTOCOL CONTRACT v1.4</Badge>
             <Badge variant="success">
               <ShieldCheck className="h-3 w-3" />

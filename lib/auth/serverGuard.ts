@@ -1,13 +1,16 @@
 /**
  * DD oodle Smart Home — Server Component Session & RBAC Guard
- * Enforces signed HttpOnly cookie verification inside RSC layouts before HTML/RSC streaming.
+ * Enforces signed HttpOnly cookie verification (and middleware-verified x-dd-session token fallback
+ * for cookie-blocked preview iframes) inside RSC layouts before HTML/RSC streaming.
  */
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
   getPortalPathForRole,
+  isDemoAuthAllowed,
   SESSION_COOKIE_NAME,
+  SESSION_TOKEN_HEADER,
   SessionPayload,
   SessionRole,
   verifySessionToken,
@@ -16,7 +19,18 @@ import {
 export async function verifyServerSession(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const rawToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  return verifySessionToken(rawToken);
+  const cookieSession = await verifySessionToken(rawToken);
+  if (cookieSession) return cookieSession;
+
+  if (isDemoAuthAllowed()) {
+    const headerStore = await headers();
+    const fallbackTok = headerStore.get(SESSION_TOKEN_HEADER);
+    if (fallbackTok) {
+      return verifySessionToken(fallbackTok);
+    }
+  }
+
+  return null;
 }
 
 export async function requireServerRole(

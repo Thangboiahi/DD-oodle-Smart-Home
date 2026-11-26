@@ -1,11 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { MotionConfig } from 'motion/react';
-import { Home, LogOut, Moon, ShieldCheck, Store, Sun, Wrench } from 'lucide-react';
-import type { SessionPayload } from '@/lib/auth/session';
+import { Home, LogOut, Moon, Shield, ShieldCheck, Store, Sun, UserCheck, Users, Wrench } from 'lucide-react';
+import { getPortalPathForRole, type SessionPayload, type SessionRole } from '@/lib/auth/session';
 import { WorkspaceProvider, useWorkspace } from '@/components/workspace/WorkspaceProvider';
 import { DDoodleLogo } from '@/components/brand/DDoodleLogo';
 import { QuickThemePopover } from '@/components/theme/CustomTriColorStudio';
@@ -13,6 +12,11 @@ import { FloatingEmergencyAlert } from '@/components/safety/FloatingEmergencyAle
 import { CrashSosModal, CriticalLifeSafetyAlert } from '@/components/safety/CrashSosModal';
 import { Badge, Button } from '@/components/ui';
 import { simulatorEngine } from '@/lib/simulator/engine';
+import {
+  IframeTokenSyncBridge,
+  performCleanSignOut,
+  performDemoRoleSwitch,
+} from '@/components/auth/IframeSessionBridge';
 
 const IMMEDIATE_CRITICAL_TYPES = new Set([
   'SOS_MANUAL',
@@ -30,8 +34,8 @@ function AdminChrome({
   session: SessionPayload;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const { prefs, resolvedLightMode, setTheme, snapshot } = useWorkspace();
+  const [switchingRole, setSwitchingRole] = useState<SessionRole | null>(null);
 
   let activeCriticalAlert: CriticalLifeSafetyAlert | null = null;
   for (const dev of Object.values(snapshot.devices)) {
@@ -46,19 +50,25 @@ function AdminChrome({
     }
   }
 
-  const handleSignOut = async () => {
+  const handleQuickRoleSwitch = async (role: SessionRole) => {
+    setSwitchingRole(role);
     try {
-      await fetch('/api/auth/session', { method: 'DELETE' });
+      await performDemoRoleSwitch(role);
     } catch {
-      // Ignore network errors
+      setSwitchingRole(null);
     }
-    router.push('/auth');
-    router.refresh();
+  };
+
+  const handleSignOut = async () => {
+    await performCleanSignOut('/auth');
   };
 
   return (
     <MotionConfig reducedMotion={prefs.motionMode === 'fluid' ? 'user' : 'always'}>
       <div className="min-h-screen bg-canvas text-foreground flex flex-col">
+        <React.Suspense fallback={null}>
+          <IframeTokenSyncBridge />
+        </React.Suspense>
         <FloatingEmergencyAlert />
 
         <CrashSosModal
@@ -72,7 +82,7 @@ function AdminChrome({
           <div className="mx-auto max-w-[1440px] h-full px-3 sm:px-5 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <Link href="/admin" className="flex items-center gap-2 shrink-0">
-                <DDoodleLogo size="sm" animated={prefs.motionMode === 'fluid'} />
+                <DDoodleLogo size="sm" showWordmark animated={prefs.motionMode === 'fluid'} />
               </Link>
               <Badge variant="accent" className="hidden sm:inline-flex">
                 <ShieldCheck className="h-3 w-3" />
@@ -84,22 +94,58 @@ function AdminChrome({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              <Link href="/console">
+              {/* Demo Quick Role Switcher Pill */}
+              <div className="hidden md:flex items-center gap-1 rounded-lg border border-border bg-surface-elevated p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  disabled={switchingRole !== null}
+                  onClick={() => void handleQuickRoleSwitch('customer')}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground-secondary hover:text-foreground hover:bg-surface cursor-pointer"
+                  title="Switch to Customer Owner (/console)"
+                >
+                  <UserCheck className="h-3 w-3 text-primary" />
+                  <span>{switchingRole === 'customer' ? '...' : 'Customer'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={switchingRole !== null}
+                  onClick={() => void handleQuickRoleSwitch('family_member')}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground-secondary hover:text-foreground hover:bg-surface cursor-pointer"
+                  title="Switch to Family Member (/console)"
+                >
+                  <Users className="h-3 w-3 text-tertiary" />
+                  <span>{switchingRole === 'family_member' ? '...' : 'Family'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={switchingRole !== null}
+                  onClick={() => void handleQuickRoleSwitch('installer')}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-foreground-secondary hover:text-foreground hover:bg-surface cursor-pointer"
+                  title="Switch to Field Installer (/installer)"
+                >
+                  <Wrench className="h-3 w-3 text-warning" />
+                  <span>{switchingRole === 'installer' ? '...' : 'Installer'}</span>
+                </button>
+                <span className="inline-flex items-center gap-1 rounded-md bg-accent-soft border border-accent-border px-2 py-1 text-accent font-semibold">
+                  <Shield className="h-3 w-3" />
+                  <span>Admin</span>
+                </span>
+              </div>
+
+              <Link href="/console" className="md:hidden">
                 <Button variant="ghost" size="sm">
                   <Home className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">Console</span>
-                </Button>
-              </Link>
-              <Link href="/installer">
-                <Button variant="ghost" size="sm">
-                  <Wrench className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">Installer</span>
                 </Button>
               </Link>
               <Link href="/?showcase=1" className="hidden sm:inline-flex">
                 <Button variant="ghost" size="sm">
                   <Store className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">Store</span>
+                  <span className="hidden lg:inline">Showcase</span>
+                </Button>
+              </Link>
+              <Link href="/shop" className="hidden sm:inline-flex">
+                <Button variant="ghost" size="sm">
+                  <span>Shop</span>
                 </Button>
               </Link>
 

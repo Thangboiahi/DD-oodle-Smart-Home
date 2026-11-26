@@ -89,7 +89,7 @@ export const AppBootSplash: React.FC = () => {
             transition={{ duration: 0.3, ease: 'easeOut' }}
             className="w-full max-w-xs flex flex-col items-center gap-5 text-center"
           >
-            <DDoodleLogo size="lg" showWordmark={false} animated={true} />
+            <DDoodleLogo size="lg" variant="loading" showWordmark={false} animated={true} />
 
             <div className="space-y-1">
               <div className="text-base font-semibold tracking-tight text-foreground">

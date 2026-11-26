@@ -14,14 +14,20 @@ import {
   Home,
   Keyboard,
   LayoutGrid,
+  LogOut,
   MoreHorizontal,
   Moon,
   Search,
+  Shield,
   ShieldAlert,
   Store,
   Sun,
+  UserCheck,
+  Users,
   Volume2,
+  Wrench,
 } from 'lucide-react';
+import { getPortalPathForRole, type SessionPayload, type SessionRole } from '@/lib/auth/session';
 import { simulatorEngine } from '@/lib/simulator/engine';
 import {
   HomeSummary,
@@ -43,6 +49,7 @@ export interface SmartStickyHeaderProps {
   unreadAlertsCount: number;
   hasActiveFaultOrCritical: boolean;
   lastSyncTs: number;
+  session?: SessionPayload | null;
   onOpenAlertInbox: () => void;
   onOpenCommandPalette: () => void;
   onOpenShortcuts: () => void;
@@ -55,6 +62,7 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
   unreadAlertsCount,
   hasActiveFaultOrCritical,
   lastSyncTs,
+  session,
   onOpenAlertInbox,
   onOpenCommandPalette,
   onOpenShortcuts,
@@ -83,8 +91,39 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
   // Dropdown states
   const [homeMenuOpen, setHomeMenuOpen] = useState(false);
   const [quickToolsOpen, setQuickToolsOpen] = useState(false);
+  const [switchingRole, setSwitchingRole] = useState<SessionRole | null>(null);
   const homeMenuRef = useRef<HTMLDivElement>(null);
   const quickToolsRef = useRef<HTMLDivElement>(null);
+
+  const handleQuickRoleSwitch = async (role: SessionRole) => {
+    setSwitchingRole(role);
+    try {
+      const res = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ mode: 'demo', role }),
+      });
+      const data = (await res.json()) as { redirectTo?: string };
+      setQuickToolsOpen(false);
+      window.location.assign(data.redirectTo || getPortalPathForRole(role));
+    } catch {
+      setSwitchingRole(null);
+    }
+  };
+
+  const handleQuickSignOut = async () => {
+    try {
+      await fetch('/api/auth/session', {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+    } catch {
+      // Ignore network errors
+    }
+    setQuickToolsOpen(false);
+    window.location.assign('/auth');
+  };
 
   useEffect(() => {
     const handleScroll = (targetY: number) => {
@@ -534,6 +573,93 @@ export const SmartStickyHeader: React.FC<SmartStickyHeaderProps> = ({
                       Studio →
                     </Link>
                   </div>
+                </div>
+
+                {/* Demo-Only Quick Role Switcher & Session Sign Out */}
+                <div className="pt-1.5 mt-1 border-t border-border/60 px-2.5 py-1.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-foreground-muted">
+                      Demo Role Switcher
+                    </span>
+                    <Badge variant="warning" className="text-[9px]">
+                      {session?.role ? session.role.replace('_', ' ').toUpperCase() : 'DEMO'}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      disabled={switchingRole !== null}
+                      onClick={() => void handleQuickRoleSwitch('customer')}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors cursor-pointer',
+                        session?.role === 'customer'
+                          ? 'border-accent bg-accent-soft text-accent font-semibold'
+                          : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground'
+                      )}
+                    >
+                      <UserCheck className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {switchingRole === 'customer' ? 'Switching...' : 'Customer'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={switchingRole !== null}
+                      onClick={() => void handleQuickRoleSwitch('family_member')}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors cursor-pointer',
+                        session?.role === 'family_member'
+                          ? 'border-accent bg-accent-soft text-accent font-semibold'
+                          : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground'
+                      )}
+                    >
+                      <Users className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {switchingRole === 'family_member' ? 'Switching...' : 'Family'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={switchingRole !== null}
+                      onClick={() => void handleQuickRoleSwitch('installer')}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors cursor-pointer',
+                        session?.role === 'installer'
+                          ? 'border-accent bg-accent-soft text-accent font-semibold'
+                          : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground'
+                      )}
+                    >
+                      <Wrench className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {switchingRole === 'installer' ? 'Switching...' : 'Installer'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={switchingRole !== null}
+                      onClick={() => void handleQuickRoleSwitch('admin')}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors cursor-pointer',
+                        session?.role === 'admin'
+                          ? 'border-accent bg-accent-soft text-accent font-semibold'
+                          : 'border-border bg-surface-elevated text-foreground-secondary hover:text-foreground'
+                      )}
+                    >
+                      <Shield className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {switchingRole === 'admin' ? 'Switching...' : 'Admin'}
+                      </span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickSignOut()}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-danger/40 bg-danger-soft/50 px-2.5 py-1.5 text-[11px] font-medium text-danger hover:bg-danger-soft transition-colors cursor-pointer"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span>Sign Out</span>
+                  </button>
                 </div>
               </div>
             )}

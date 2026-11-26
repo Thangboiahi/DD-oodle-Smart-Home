@@ -98,14 +98,14 @@ const CRITICAL_ALERT_CODES = new Set<string>([
 export const DEFAULT_HOMES: HomeSummary[] = [
   {
     id: 'home_imphal_001',
-    name: 'Imphal Residence',
-    location: 'Manipur · IST',
+    name: 'Lamka Smart Residence',
+    location: 'Churachandpur / Imphal · Manipur',
     hubStatus: 'online',
   },
   {
     id: 'home_guwahati_002',
-    name: 'Guwahati Studio',
-    location: 'Assam · Standby',
+    name: 'Imphal Duplex',
+    location: 'Lamphelpat, Imphal · Pilot Home',
     hubStatus: 'local',
   },
 ];

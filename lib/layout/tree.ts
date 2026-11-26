@@ -66,11 +66,12 @@ const DEFAULT_TREE: LayoutTreeContainerNode[] = [
   {
     type: 'container',
     id: 'room_living',
-    title: 'Living Room',
+    title: 'Living & Dining',
     kind: 'room',
     roomId: 'room_living',
     children: [
       { type: 'widget', id: 'dd_pwr01_a1b2c3' },
+      { type: 'widget', id: 'dd_pwr04_p2d1' },
       { type: 'widget', id: 'dd_hub01_u7v8w9' },
     ],
   },
@@ -80,7 +81,10 @@ const DEFAULT_TREE: LayoutTreeContainerNode[] = [
     title: 'Master Bedroom',
     kind: 'room',
     roomId: 'room_bedroom',
-    children: [{ type: 'widget', id: 'dd_pwr02_d4e5f6' }],
+    children: [
+      { type: 'widget', id: 'dd_pwr02_d4e5f6' },
+      { type: 'widget', id: 'dd_env01_p2c1' },
+    ],
   },
   {
     type: 'container',
@@ -89,6 +93,33 @@ const DEFAULT_TREE: LayoutTreeContainerNode[] = [
     kind: 'room',
     roomId: 'room_bath',
     children: [{ type: 'widget', id: 'dd_pwr03_g7h8i9' }],
+  },
+  {
+    type: 'container',
+    id: 'room_kitchen',
+    title: 'Kitchen & Utility',
+    kind: 'room',
+    roomId: 'room_kitchen',
+    children: [{ type: 'widget', id: 'dd_saf01_p2s1' }],
+  },
+  {
+    type: 'container',
+    id: 'room_entry',
+    title: 'Main Entry & Gate',
+    kind: 'room',
+    roomId: 'room_entry',
+    children: [
+      { type: 'widget', id: 'dd_sec01_p2l1' },
+      { type: 'widget', id: 'dd_sec04_p2v1' },
+    ],
+  },
+  {
+    type: 'container',
+    id: 'room_elder',
+    title: 'Elder Wellness Room',
+    kind: 'room',
+    roomId: 'room_elder',
+    children: [{ type: 'widget', id: 'dd_hlt01_p3w1' }],
   },
   {
     type: 'container',

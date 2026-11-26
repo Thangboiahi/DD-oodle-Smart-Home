@@ -38,14 +38,14 @@ export interface HomeCoordinatePreset {
 
 export const HOME_COORDINATE_PRESETS: Record<string, HomeCoordinatePreset> = {
   home_imphal_001: {
-    lat: 24.817,
-    lng: 93.9368,
-    label: 'Imphal Residence',
+    lat: 24.333,
+    lng: 93.683,
+    label: 'Lamka Smart Residence (Churachandpur)',
   },
   home_guwahati_002: {
-    lat: 26.1445,
-    lng: 91.7362,
-    label: 'Guwahati Studio',
+    lat: 24.817,
+    lng: 93.9368,
+    label: 'Imphal Duplex (Lamphelpat)',
   },
 };
 
@@ -53,9 +53,9 @@ export function getHomeFallbackCoords(homeId: string, fallbackName?: string): Ho
   const preset = HOME_COORDINATE_PRESETS[homeId];
   if (preset) return preset;
   return {
-    lat: 24.817,
-    lng: 93.9368,
-    label: fallbackName || 'Home Coordinates',
+    lat: 24.333,
+    lng: 93.683,
+    label: fallbackName || 'Lamka Smart Residence',
   };
 }
 

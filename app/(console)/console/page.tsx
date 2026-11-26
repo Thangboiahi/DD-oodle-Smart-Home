@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { simulatorEngine } from '@/lib/simulator/engine';
 import { Phase1ModuleCode } from '@/lib/protocol/contract';
-import { resolveEntitlements } from '@/lib/entitlements/resolver';
+import { TIER_CATALOG } from '@/lib/entitlements/resolver';
+import { useUnifiedHome } from '@/lib/data/unifiedStore';
 import { DynamicCapabilityCard } from '@/components/capabilities/DynamicCapabilityCard';
 import { SimulatorWorkbench } from '@/components/simulator/SimulatorWorkbench';
 import { VoiceIntegrationsModal } from '@/components/voice/VoiceIntegrationsModal';
@@ -62,6 +63,7 @@ export default function DDoodleSmartHomeDashboard() {
     setDockPanelState,
   } = useWorkspace();
   const { pushToast } = useToast();
+  const { subscription, entitlements } = useUnifiedHome(prefs.activeHomeId);
 
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [showVoiceModal, setShowVoiceModal] = useState(false);
@@ -74,15 +76,6 @@ export default function DDoodleSmartHomeDashboard() {
 
   const workbenchState = getDockPanelState('home_sim_workbench', { open: false, position: 'right' });
   const inspectorState = getDockPanelState('quick_inspector', { open: false, position: 'right' });
-
-  const [initialTrialEndsAt] = useState(() => 1771488000000 + 89 * 24 * 60 * 60 * 1000);
-  const entitlements = resolveEntitlements({
-    tier: 'core',
-    status: 'trial',
-    trial_ends_at: initialTrialEndsAt,
-    expires_at: null,
-    dfy_3d_purchased: false,
-  });
 
   // Listen for global Quick Tools header toggles (2D/3D switch & Voice C2C modal)
   useEffect(() => {
@@ -333,7 +326,10 @@ export default function DDoodleSmartHomeDashboard() {
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <CreditCard className="h-3.5 w-3.5 text-accent" />
-                      <span>Plan: Plus Trial ({entitlements.trialDaysRemaining ?? 78}d)</span>
+                      <span>
+                        Plan: {TIER_CATALOG[entitlements.effectiveTier].displayName} (
+                        {subscription?.trialStatus ?? 'Active'})
+                      </span>
                     </span>
                     <span className="font-mono text-[10px] text-accent">→</span>
                   </Link>

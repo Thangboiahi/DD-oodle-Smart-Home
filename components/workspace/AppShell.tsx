@@ -45,6 +45,7 @@ import { AlertInboxDrawer, AlertInboxEntry } from './AlertInboxDrawer';
 import { SmartStickyHeader } from './SmartStickyHeader';
 import { FloatingEmergencyAlert } from '@/components/safety/FloatingEmergencyAlert';
 import { simulatorEngine } from '@/lib/simulator/engine';
+import { IframeTokenSyncBridge, performCleanSignOut } from '@/components/auth/IframeSessionBridge';
 
 interface NavEntry {
   href: string;
@@ -290,13 +291,7 @@ export const AppShell: React.FC<{
   const secondaryNav = visibleNavItems.filter((i) => i.group === 'secondary');
 
   const handleSignOut = async () => {
-    try {
-      await fetch('/api/auth/session', { method: 'DELETE' });
-    } catch {
-      // Ignore network error during signout
-    }
-    router.push('/auth');
-    router.refresh();
+    await performCleanSignOut('/auth');
   };
 
   const cycleTheme = () => {
@@ -309,6 +304,9 @@ export const AppShell: React.FC<{
   return (
     <MotionConfig reducedMotion={prefs.motionMode === 'fluid' ? 'user' : 'always'}>
       <div className="min-h-screen bg-canvas text-foreground flex flex-col">
+        <React.Suspense fallback={null}>
+          <IframeTokenSyncBridge />
+        </React.Suspense>
         {/* Cold PWA Boot Splash (0ms bypass when Life-Safety Critical is active) */}
         <AppBootSplash />
 
@@ -507,6 +505,7 @@ export const AppShell: React.FC<{
             unreadAlertsCount={unreadAlertsCount}
             hasActiveFaultOrCritical={isLifeSafetyActive || activeAlerts.length > 0}
             lastSyncTs={lastSyncTs}
+            session={session}
             onOpenAlertInbox={() => setAlertsOpen(true)}
             onOpenCommandPalette={() => setCommandPaletteOpen(true)}
             onOpenShortcuts={() => setShortcutsOpen(true)}

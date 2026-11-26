@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Phase1ModuleCode } from '@/lib/protocol/contract';
 import { resolveEntitlements } from '@/lib/entitlements/resolver';
+import { useUnifiedHome } from '@/lib/data/unifiedStore';
 import {
   INDIAN_RECIPES,
   ProRuleAst,
@@ -46,8 +47,9 @@ import { cn } from '@/lib/utils';
 const FORBIDDEN_ACTION_KEYS = new Set(['immobilize', 'config', 'guardrails']);
 
 export default function AutomationsPage() {
-  const { snapshot, getDockPanelState, setDockPanelState } = useWorkspace();
+  const { prefs, snapshot, getDockPanelState, setDockPanelState } = useWorkspace();
   const { pushToast } = useToast();
+  const { entitlements: liveEntitlements } = useUnifiedHome(prefs.activeHomeId);
 
   const [activeTab, setActiveTab] = useState<'recipes' | 'pro'>('recipes');
   const [selectedModule, setSelectedModule] = useState<Phase1ModuleCode>('PWR-01');
@@ -78,27 +80,18 @@ export default function AutomationsPage() {
     position: 'right',
   });
 
-  const [initialTrialEndsAt] = useState(() => 1771488000000 + 89 * 24 * 60 * 60 * 1000);
   const entitlements = useMemo(
     () =>
-      resolveEntitlements(
-        simulateCoreTier
-          ? {
-              tier: 'core',
-              status: 'expired',
-              trial_ends_at: null,
-              expires_at: null,
-              dfy_3d_purchased: false,
-            }
-          : {
-              tier: 'core',
-              status: 'trial',
-              trial_ends_at: initialTrialEndsAt,
-              expires_at: null,
-              dfy_3d_purchased: false,
-            }
-      ),
-    [simulateCoreTier, initialTrialEndsAt]
+      simulateCoreTier
+        ? resolveEntitlements({
+            tier: 'core',
+            status: 'expired',
+            trial_ends_at: null,
+            expires_at: null,
+            dfy_3d_purchased: false,
+          })
+        : liveEntitlements,
+    [simulateCoreTier, liveEntitlements]
   );
 
   const isHubNode = selectedModule === 'HUB-01';

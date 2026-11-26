@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { OperationMode, Phase1ModuleCode } from '@/lib/protocol/contract';
 import { BLE_GATT, SOFTAP_TRANSPORT, SoftApProvisionPayload } from '@/lib/protocol/transports';
+import { commissionHardwareDevice } from '@/lib/data/unifiedStore';
 import {
   Badge,
   Button,
@@ -43,9 +44,12 @@ const STEPS = [
 ] as const;
 
 const ROOM_OPTIONS = [
-  { value: 'room_living', label: 'Living Room' },
+  { value: 'room_living', label: 'Living & Dining' },
   { value: 'room_bedroom', label: 'Master Bedroom' },
   { value: 'room_bath', label: 'Master Bath' },
+  { value: 'room_kitchen', label: 'Kitchen & Utility' },
+  { value: 'room_entry', label: 'Main Entry & Gate' },
+  { value: 'room_elder', label: 'Elder Wellness Room' },
   { value: 'room_terrace', label: 'Terrace & Tank' },
   { value: 'room_garage', label: 'Garage & Vehicle' },
 ];
@@ -101,10 +105,18 @@ export default function DeviceSetupPage() {
   };
 
   const finishSetup = () => {
+    commissionHardwareDevice({
+      homeId: activeHome.id,
+      deviceId: deviceId.trim(),
+      moduleCode,
+      roomId: assignedRoom,
+      localPin,
+      reason: `Self-commissioned via /console/setup (${transportMethod.toUpperCase()})`,
+    });
     setCompleted(true);
     pushToast({
-      title: 'Module Commissioned',
-      description: `${deviceId} (${moduleCode}) assigned to ${assignedRoom}`,
+      title: 'Module Commissioned & Live',
+      description: `${deviceId} (${moduleCode}) added to ${assignedRoom} in 2D Grid, 3D Twin & Admin Fleet.`,
       tone: 'success',
     });
   };

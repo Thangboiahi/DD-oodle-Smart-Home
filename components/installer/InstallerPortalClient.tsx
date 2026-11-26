@@ -26,6 +26,7 @@ import {
   InstallerJobRecord,
   useScopedInstallerJobs,
 } from '@/lib/installer/jobsStore';
+import { useUnifiedFleet } from '@/lib/data/unifiedStore';
 import {
   Badge,
   Banner,
@@ -51,12 +52,14 @@ const Home3DTwinView = dynamic(
 );
 
 const ROOM_OPTIONS = [
-  { value: 'room_living', label: 'Living Room' },
+  { value: 'room_living', label: 'Living & Dining' },
   { value: 'room_bedroom', label: 'Master Bedroom' },
   { value: 'room_bath', label: 'Master Bath' },
   { value: 'room_kitchen', label: 'Kitchen & Utility' },
+  { value: 'room_entry', label: 'Main Entry & Gate' },
+  { value: 'room_elder', label: 'Elder Wellness Room' },
   { value: 'room_terrace', label: 'Terrace & Tank' },
-  { value: 'room_garage', label: 'Garage & Entry' },
+  { value: 'room_garage', label: 'Garage & Vehicle' },
 ];
 
 const MODULE_OPTIONS = HARDWARE_REGISTRY.map((m) => ({
@@ -67,6 +70,7 @@ const MODULE_OPTIONS = HARDWARE_REGISTRY.map((m) => ({
 export function InstallerPortalClient({ session }: { session: SessionPayload }) {
   const { pushToast } = useToast();
   const { activeJobs, inactiveJobs, linkDevice, completeJob } = useScopedInstallerJobs(session);
+  const { snapshot: simSnapshot } = useUnifiedFleet();
 
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const activeJob: InstallerJobRecord | null =
@@ -95,8 +99,6 @@ export function InstallerPortalClient({ session }: { session: SessionPayload }) 
   const spec = getHardwareModule(moduleCode);
   const allow3D = activeJob ? canJobAccess3DStudio(activeJob) : false;
 
-  // Read-only mock snapshot strictly scoped for interactive 3D pin verification
-  const [simSnapshot] = useState(() => simulatorEngine.getSnapshot());
   const installerEntitlements = resolveEntitlements({
     tier: 'all_in_family',
     status: 'active',

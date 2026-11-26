@@ -4,6 +4,10 @@
  */
 
 export const SESSION_COOKIE_NAME = '__dd_session';
+export const SESSION_TOKEN_QUERY_PARAM = '__dd_tok';
+export const SESSION_TOKEN_HEADER = 'x-dd-session';
+export const SESSION_STORAGE_TOKEN_KEY = 'dd_oodle_iframe_session_token';
+export const SESSION_STORAGE_USER_KEY = 'dd_oodle_iframe_session_user';
 export const SESSION_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
 
 export type SessionRole = 'customer' | 'family_member' | 'installer' | 'admin';
@@ -22,17 +26,21 @@ export interface SessionPayload {
 
 const VALID_ROLES = new Set<SessionRole>(['customer', 'family_member', 'installer', 'admin']);
 
-function getSessionSecret(): string {
-  return (
-    process.env.SESSION_COOKIE_SECRET ||
-    process.env.VOICE_WEBHOOK_SIGNING_SECRET ||
-    'dd-oodle-smart-home-v14-hmac-cookie-key'
-  );
+export function getSessionSecret(): string {
+  return process.env.SESSION_SECRET || 'ddoodle-dev-preview-hmac-v1.4-key';
 }
 
 export function isDemoAuthAllowed(): boolean {
-  const hasServerAdminCreds = Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-  return !hasServerAdminCreds && process.env.DISABLE_DEMO_AUTH !== 'true';
+  if (
+    process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH === 'false' ||
+    process.env.DISABLE_DEMO_AUTH === 'true'
+  ) {
+    return false;
+  }
+  return (
+    process.env.NEXT_PUBLIC_ENABLE_DEMO_AUTH !== 'false' ||
+    !process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+  );
 }
 
 export function getPortalPathForRole(role: SessionRole): string {
@@ -47,6 +55,59 @@ export function isRoleAllowedForPrefix(role: SessionRole, prefix: '/console' | '
   return role === 'customer' || role === 'family_member' || role === 'admin';
 }
 
+export function buildSessionSetCookieHeader(
+  token: string,
+  isHttps: boolean,
+  maxAgeSec: number = SESSION_TTL_SEC
+): string {
+  const parts = [
+    `${SESSION_COOKIE_NAME}=${token}`,
+    'Path=/',
+    'HttpOnly',
+    `Max-Age=${maxAgeSec}`,
+  ];
+  if (isHttps) {
+    parts.push('SameSite=None', 'Secure', 'Partitioned');
+  } else {
+    parts.push('SameSite=Lax');
+  }
+  return parts.join('; ');
+}
+
+export function appendIframeSessionTokenIfNeeded(
+  targetPath: string,
+  explicitToken?: string | null
+): string {
+  if (!targetPath || !targetPath.startsWith('/')) return targetPath;
+  const tok =
+    explicitToken ??
+    (typeof window !== 'undefined'
+      ? window.sessionStorage.getItem(SESSION_STORAGE_TOKEN_KEY)
+      : null);
+  if (!tok) return targetPath;
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const url = new URL(targetPath, base);
+    if (!url.searchParams.has(SESSION_TOKEN_QUERY_PARAM)) {
+      url.searchParams.set(SESSION_TOKEN_QUERY_PARAM, tok);
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    const joiner = targetPath.includes('?') ? '&' : '?';
+    return `${targetPath}${joiner}${SESSION_TOKEN_QUERY_PARAM}=${encodeURIComponent(tok)}`;
+  }
+}
+
+export function clearClientIframeSessionStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(SESSION_STORAGE_TOKEN_KEY);
+    window.sessionStorage.removeItem(SESSION_STORAGE_USER_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
@@ -55,18 +116,27 @@ function bytesToBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function base64UrlToBytes(b64u: string): Uint8Array {
-  const b64 = b64u.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64u.length + 3) % 4);
+function base64UrlToBytes(b64u: string): Uint8Array<ArrayBuffer> {
+  const clean = b64u.trim().replace(/-/g, '+').replace(/_/g, '/');
+  const padLen = (4 - (clean.length % 4)) % 4;
+  const b64 = clean + '='.repeat(padLen);
   const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
   for (let i = 0; i < bin.length; i++) {
     out[i] = bin.charCodeAt(i);
   }
   return out;
 }
 
+function encodeUtf8(text: string): Uint8Array<ArrayBuffer> {
+  const encoded = new TextEncoder().encode(text);
+  const copy = new Uint8Array(new ArrayBuffer(encoded.byteLength));
+  copy.set(encoded);
+  return copy;
+}
+
 async function importHmacKey(): Promise<CryptoKey> {
-  const secretBytes = new TextEncoder().encode(getSessionSecret());
+  const secretBytes = encodeUtf8(getSessionSecret());
   return crypto.subtle.importKey(
     'raw',
     secretBytes,
@@ -85,13 +155,13 @@ export async function signSessionToken(
     iat: nowSec,
     exp: nowSec + SESSION_TTL_SEC,
   };
-  const jsonBytes = new TextEncoder().encode(JSON.stringify(payload));
+  const jsonBytes = encodeUtf8(JSON.stringify(payload));
   const payloadB64 = bytesToBase64Url(jsonBytes);
   const key = await importHmacKey();
   const sigBuf = await crypto.subtle.sign(
     'HMAC',
     key,
-    new TextEncoder().encode(payloadB64)
+    encodeUtf8(payloadB64)
   );
   const sigB64 = bytesToBase64Url(new Uint8Array(sigBuf));
   return `${payloadB64}.${sigB64}`;
@@ -112,11 +182,12 @@ export async function verifySessionToken(
   try {
     const key = await importHmacKey();
     const sigBytes = base64UrlToBytes(sigB64);
+    const dataBytes = encodeUtf8(payloadB64);
     const valid = await crypto.subtle.verify(
       'HMAC',
       key,
-      sigBytes.buffer as ArrayBuffer,
-      new TextEncoder().encode(payloadB64)
+      sigBytes,
+      dataBytes
     );
     if (!valid) return null;
 

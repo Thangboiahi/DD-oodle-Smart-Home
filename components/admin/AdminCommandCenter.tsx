@@ -19,6 +19,7 @@ import {
   MessageCircle,
   Plus,
   QrCode,
+  RefreshCw,
   Search,
   Send,
   ShieldCheck,
@@ -41,8 +42,9 @@ import { ContractComplianceReport, runContractV14Audit } from '@/lib/protocol/va
 import { simulatorEngine } from '@/lib/simulator/engine';
 import { SimulatorWorkbench } from '@/components/simulator/SimulatorWorkbench';
 import { useAdminErpStore } from '@/lib/admin/erpStore';
+import { commissionHardwareDevice } from '@/lib/data/unifiedStore';
 import { AdminPricingTab } from './AdminPricingTab';
-import { AdminBillingDevicesTab, AmcTicketItem } from './AdminBillingDevicesTab';
+import { AdminBillingDevicesTab } from './AdminBillingDevicesTab';
 import { AdminUsersJobsTab } from './AdminUsersJobsTab';
 import { AdminQuotesTab } from './AdminQuotesTab';
 import { AdminFinanceLedger } from './AdminFinanceLedger';
@@ -100,36 +102,6 @@ interface BatchClaimItem {
   status: 'queued' | 'claimed';
 }
 
-const INITIAL_AMC_TICKETS: AmcTicketItem[] = [
-  {
-    ticket_id: 'amc_2026_001',
-    customer: 'Imphal Residence (home_imphal_001)',
-    tier: 'all_in_family',
-    device: 'WAT-01 Tank & Pump Guard',
-    issue: 'ESP-NOW terrace RF path check & ultrasonic probe calibration',
-    sla24h: true,
-    status: 'SCHEDULED',
-  },
-  {
-    ticket_id: 'amc_2026_002',
-    customer: 'Porompat Villa (home_imphal_014)',
-    tier: 'shield',
-    device: 'PWR-03 25A Geyser Node',
-    issue: 'Thermal relay inspection after seasonal load spike',
-    sla24h: true,
-    status: 'OPEN',
-  },
-  {
-    ticket_id: 'amc_2026_003',
-    customer: 'Guwahati Studio (home_guwahati_002)',
-    tier: 'plus',
-    device: 'PWR-01 4-Ch Switchboard',
-    issue: 'Routine annual inspection',
-    sla24h: false,
-    status: 'RESOLVED',
-  },
-];
-
 async function computeSha256Hex(buffer: ArrayBuffer): Promise<string> {
   if (typeof crypto === 'undefined' || !crypto.subtle) {
     return 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
@@ -143,7 +115,15 @@ async function computeSha256Hex(buffer: ArrayBuffer): Promise<string> {
 export function AdminCommandCenter({ session }: { session: SessionPayload }) {
   const { snapshot, getDockPanelState, setDockPanelState } = useWorkspace();
   const { pushToast } = useToast();
-  const { quotes } = useAdminErpStore();
+  const {
+    quotes,
+    amcTickets,
+    incidents: erpIncidents,
+    deviceStates,
+    subscriptions,
+    resolveAmcTicket,
+    setHomeDfy3dPurchased,
+  } = useAdminErpStore();
 
   const actor = {
     uid: session.uid,
@@ -173,7 +153,8 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
   ]);
   const [newClaimId, setNewClaimId] = useState('dd_pwr02_f903');
   const [newClaimMod, setNewClaimMod] = useState<Phase1ModuleCode>('PWR-02');
-  const [dfyDelivered, setDfyDelivered] = useState(false);
+  const primaryHomeSub = subscriptions.find((s) => s.homeId === 'home_imphal_001');
+  const dfyDelivered = primaryHomeSub?.dfy3dPurchased ?? true;
   const [savedDfySummary, setSavedDfySummary] = useState<{
     template: string;
     floors: number;
@@ -196,9 +177,6 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
     secureBootV2: true,
   });
   const [otaDispatchedPayload, setOtaDispatchedPayload] = useState<OtaPayload | null>(null);
-
-  // AMC Tickets state
-  const [amcTickets, setAmcTickets] = useState<AmcTicketItem[]>(INITIAL_AMC_TICKETS);
 
   const devicesList = Object.values(snapshot.devices);
 
@@ -230,33 +208,63 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
       return a.name.localeCompare(b.name);
     });
 
-  const activeIncidents: Array<{ incident_id: string; deviceId: string; type: string; severity: string }> = [];
+  const activeIncidents: Array<{
+    incident_id: string;
+    deviceId: string;
+    type: string;
+    severity: string;
+    summary?: string;
+  }> = [];
+  const seenIncidentKeys = new Set<string>();
+
   if (snapshot.activeCrashSos && snapshot.activeCrashSos.status !== 'cancelled_by_user') {
+    const key = `${snapshot.activeCrashSos.device_id}:CRASH_DETECTED`;
+    seenIncidentKeys.add(key);
     activeIncidents.push({
       incident_id: snapshot.activeCrashSos.incident_id,
       deviceId: snapshot.activeCrashSos.device_id,
       type: 'CRASH_DETECTED',
       severity: 'CRITICAL',
+      summary: `6.4G Impact SOS (${snapshot.activeCrashSos.status.toUpperCase()})`,
     });
   }
   for (const d of devicesList) {
     if (d.state.fault) {
+      const key = `${d.device_id}:${d.state.fault}`;
+      seenIncidentKeys.add(key);
       activeIncidents.push({
         incident_id: `inc_${d.device_id}_fault`,
         deviceId: d.device_id,
         type: d.state.fault,
-        severity: 'HIGH',
+        severity: 'CRITICAL',
+        summary: `G10 Hardware Latched Fault on ${d.name}`,
       });
     }
     const wat = d.module_code === 'WAT-01' ? (d.telemetry as WaterTelemetryPayload) : null;
     if (wat?.tank_link === false) {
+      const key = `${d.device_id}:TANK_LINK_LOST`;
+      seenIncidentKeys.add(key);
       activeIncidents.push({
         incident_id: `inc_${d.device_id}_tank`,
         deviceId: d.device_id,
         type: 'TANK_LINK_LOST',
-        severity: 'HIGH',
+        severity: 'WARNING',
+        summary: 'ESP-NOW Terrace Tank Link Lost',
       });
     }
+  }
+  for (const inc of erpIncidents) {
+    if (inc.status !== 'OPEN') continue;
+    const key = `${inc.deviceId}:${inc.alertType}`;
+    if (seenIncidentKeys.has(key)) continue;
+    seenIncidentKeys.add(key);
+    activeIncidents.push({
+      incident_id: inc.id,
+      deviceId: inc.deviceId,
+      type: inc.alertType,
+      severity: inc.severity,
+      summary: inc.summary,
+    });
   }
 
   const newQuotesCount = quotes.filter((qt) => qt.status === 'NEW').length;
@@ -344,6 +352,23 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={async () => {
+              const { resetDemoWorkspace } = await import('@/lib/data/unifiedStore');
+              await resetDemoWorkspace();
+              pushToast({
+                title: 'Canonical Workspace Seed Restored',
+                description:
+                  'Reset Lamka Smart Residence + Imphal Duplex, all 12 Phase 1/2/3 live nodes, 42 catalog modules, quotes, installer jobs & ERP records.',
+                tone: 'success',
+              });
+            }}
+          >
+            <RefreshCw className="h-3.5 w-3.5 text-accent" />
+            <span>Reset Demo Workspace</span>
+          </Button>
           <Button variant="secondary" size="sm" onClick={runLiveAudit}>
             <FileCheck className="h-3.5 w-3.5 text-success" />
             <span>v1.4 Audit</span>
@@ -441,9 +466,7 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
           devicesList={devicesList}
           amcTickets={amcTickets}
           onResolveAmc={(ticketId) => {
-            setAmcTickets((prev) =>
-              prev.map((x) => (x.ticket_id === ticketId ? { ...x, status: 'RESOLVED' } : x))
-            );
+            void resolveAmcTicket(ticketId, actor);
             pushToast({ title: `Ticket ${ticketId} Resolved`, tone: 'success' });
           }}
         />
@@ -468,12 +491,12 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
                 {activeIncidents.map((inc) => (
                   <div
                     key={inc.incident_id}
-                    className="snap-start shrink-0 min-w-[230px] rounded-lg hairline-border bg-danger-soft/70 px-3 py-2 flex items-center justify-between gap-2"
+                    className="snap-start shrink-0 min-w-[240px] rounded-lg hairline-border bg-danger-soft/70 px-3 py-2 flex items-center justify-between gap-2"
                   >
                     <div className="min-w-0">
                       <div className="font-bold text-danger text-[11px]">{inc.type}</div>
                       <div className="text-[10px] text-foreground-secondary truncate">
-                        {inc.deviceId}
+                        {inc.deviceId} {inc.summary ? `· ${inc.summary}` : ''}
                       </div>
                     </div>
                     <Button
@@ -540,6 +563,7 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
             {filteredFleet.map((dev) => {
               const wat = dev.module_code === 'WAT-01' ? (dev.telemetry as WaterTelemetryPayload) : null;
               const isExpanded = expandedMobileCardId === dev.device_id;
+              const activation = deviceStates[dev.device_id]?.activation ?? 'ACTIVE';
               return (
                 <div
                   key={dev.device_id}
@@ -557,6 +581,11 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
                       <span className="font-semibold text-foreground truncate">{dev.name}</span>
                     </button>
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {activation !== 'ACTIVE' && (
+                        <Badge variant={activation === 'QUARANTINED' ? 'danger' : 'warning'}>
+                          {activation}
+                        </Badge>
+                      )}
                       <Badge variant={dev.state.fault ? 'danger' : 'success'} dot>
                         {dev.state.fault ?? dev.status.toUpperCase()}
                       </Badge>
@@ -618,6 +647,7 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
                 <tbody>
                   {filteredFleet.map((dev) => {
                     const wat = dev.module_code === 'WAT-01' ? (dev.telemetry as WaterTelemetryPayload) : null;
+                    const activation = deviceStates[dev.device_id]?.activation ?? 'ACTIVE';
                     return (
                       <tr
                         key={dev.device_id}
@@ -632,6 +662,11 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
                         </td>
                         <td className="p-3">
                           <div className="flex items-center gap-1.5 flex-wrap">
+                            {activation !== 'ACTIVE' && (
+                              <Badge variant={activation === 'QUARANTINED' ? 'danger' : 'warning'}>
+                                {activation}
+                              </Badge>
+                            )}
                             <Badge variant={dev.state.fault ? 'danger' : 'success'} dot>
                               {dev.state.fault ? `G10: ${dev.state.fault}` : dev.status.toUpperCase()}
                             </Badge>
@@ -754,10 +789,21 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
                   variant="primary"
                   className="w-full"
                   onClick={() => {
+                    for (const item of batchQueue) {
+                      if (item.status === 'claimed') continue;
+                      commissionHardwareDevice({
+                        homeId: 'home_imphal_001',
+                        deviceId: item.deviceId,
+                        moduleCode: item.moduleCode,
+                        roomId: item.roomId,
+                        localPin: '48291034',
+                        reason: 'Batch claimed via Admin QR Queue',
+                      });
+                    }
                     setBatchQueue((prev) => prev.map((x) => ({ ...x, status: 'claimed' })));
                     pushToast({
                       title: 'Batch Claimed to home_imphal_001',
-                      description: 'All queued modules bound via SoftAP/Claim token.',
+                      description: 'All queued modules bound & live in Customer Console 2D/3D and Fleet Health.',
                       tone: 'success',
                     });
                   }}
@@ -808,10 +854,10 @@ export function AdminCommandCenter({ session }: { session: SessionPayload }) {
                   variant="primary"
                   className="w-full"
                   onClick={() => {
-                    setDfyDelivered(true);
+                    void setHomeDfy3dPurchased('home_imphal_001', true, actor);
                     pushToast({
                       title: `₹${DFY_3D_TWIN_ADDON_INR} DFY 3D Home Twin Marked Delivered`,
-                      description: `Synced ${savedDfySummary.template} (${savedDfySummary.rooms} rooms, ${savedDfySummary.placements} modules).`,
+                      description: `Synced ${savedDfySummary.template} (${savedDfySummary.rooms} rooms, ${savedDfySummary.placements} modules) to Customer Console.`,
                       tone: 'success',
                     });
                   }}

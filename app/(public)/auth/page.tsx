@@ -1,15 +1,17 @@
 'use client';
 
 import React, { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
 } from 'firebase/auth';
 import {
+  AlertCircle,
   CheckCircle2,
   KeyRound,
+  LogOut,
   Mail,
   Phone,
   RefreshCw,
@@ -21,11 +23,20 @@ import {
 } from 'lucide-react';
 import { auth } from '@/lib/firebase/client';
 import {
+  appendIframeSessionTokenIfNeeded,
+  clearClientIframeSessionStorage,
   getPortalPathForRole,
   isRoleAllowedForPrefix,
+  SESSION_STORAGE_TOKEN_KEY,
+  SESSION_STORAGE_USER_KEY,
+  SESSION_TOKEN_HEADER,
   SessionPayload,
   SessionRole,
 } from '@/lib/auth/session';
+import {
+  performCleanSignOut,
+  verifyCookieOrNavigateWithToken,
+} from '@/components/auth/IframeSessionBridge';
 import {
   Badge,
   Button,
@@ -56,7 +67,6 @@ function resolveSafeRedirect(nextParam: string | null, role: SessionRole): strin
 }
 
 function AuthWorkspace() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { pushToast } = useToast();
 
@@ -65,27 +75,48 @@ function AuthWorkspace() {
   const [mode, setMode] = useState<'phone' | 'email'>('phone');
   const [phoneDigits, setPhoneDigits] = useState('9862011114');
   const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState('');
+  const [otp, setOtp] = useState('123456');
   const [resendSec, setResendSec] = useState(0);
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('owner@ddoodle.in');
+  const [password, setPassword] = useState('ddoodle123');
   const [submitting, setSubmitting] = useState(false);
+  const [loadingRole, setLoadingRole] = useState<SessionRole | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [demoEnabled, setDemoEnabled] = useState(true);
   const [activeSession, setActiveSession] = useState<SessionPayload | null>(null);
+  const [activeDemoToken, setActiveDemoToken] = useState<string | null>(null);
   const [signedInRole, setSignedInRole] = useState<SessionRole | null>(null);
+  const [redirectTarget, setRedirectTarget] = useState<string | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(async () => {
       try {
-        const res = await fetch('/api/auth/session', { cache: 'no-store' });
+        const storedTok =
+          typeof window !== 'undefined'
+            ? window.sessionStorage.getItem(SESSION_STORAGE_TOKEN_KEY)
+            : null;
+        if (storedTok) {
+          setActiveDemoToken(storedTok);
+        }
+        const headers: Record<string, string> = {};
+        if (storedTok) {
+          headers[SESSION_TOKEN_HEADER] = storedTok;
+        }
+        const res = await fetch('/api/auth/session', {
+          cache: 'no-store',
+          credentials: 'include',
+          headers,
+        });
         if (!res.ok) return;
         const data = (await res.json()) as {
           demoEnabled?: boolean;
+          user?: SessionPayload | null;
           session?: SessionPayload | null;
         };
         if (typeof data.demoEnabled === 'boolean') setDemoEnabled(data.demoEnabled);
-        if (data.session) setActiveSession(data.session);
+        const resolved = data.user ?? data.session ?? null;
+        if (resolved) setActiveSession(resolved);
       } catch {
         // Ignore transient network errors on initial probe
       }
@@ -103,138 +134,250 @@ function AuthWorkspace() {
 
   const establishServerSession = async (payload: {
     idToken?: string;
+    mode?: 'demo' | 'firebase';
+    role?: SessionRole;
     demoRole?: SessionRole;
+    uid?: string;
     name?: string;
     phone?: string;
     email?: string;
   }) => {
     setSubmitting(true);
+    setErrorMessage(null);
+    const requestedRole = payload.role ?? payload.demoRole ?? null;
+    if (requestedRole) setLoadingRole(requestedRole);
+
     try {
       const res = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
       const data = (await res.json()) as {
         ok?: boolean;
         error?: string;
+        user?: SessionPayload;
         session?: SessionPayload;
+        redirectTo?: string;
+        demoToken?: string;
       };
-      if (!res.ok || !data.session) {
+      const sessionObj = data.user ?? data.session;
+      if (!res.ok || !sessionObj) {
+        const msg = data.error || 'Could not establish session cookie. Please try again.';
+        setErrorMessage(msg);
         pushToast({
           title: 'Sign-In Failed',
-          description: data.error || 'Could not verify credentials.',
+          description: msg,
           tone: 'critical',
         });
+        setSubmitting(false);
+        setLoadingRole(null);
         return;
       }
 
-      const role = data.session.role;
-      const target = resolveSafeRedirect(nextParam, role);
+      const role = sessionObj.role;
+      const target = nextParam
+        ? resolveSafeRedirect(nextParam, role)
+        : data.redirectTo || getPortalPathForRole(role);
+
+      if (data.demoToken) {
+        setActiveDemoToken(data.demoToken);
+        try {
+          window.sessionStorage.setItem(SESSION_STORAGE_TOKEN_KEY, data.demoToken);
+          window.sessionStorage.setItem(SESSION_STORAGE_USER_KEY, JSON.stringify(sessionObj));
+        } catch {
+          // Ignore storage errors
+        }
+      }
+
       setSignedInRole(role);
-      setActiveSession(data.session);
+      setActiveSession(sessionObj);
+      setRedirectTarget(target);
       pushToast({
         title: `Signed In (${role.replace('_', ' ').toUpperCase()})`,
-        description: `Routing to ${target}`,
+        description: `Opening ${target}...`,
         tone: 'success',
       });
-      router.push(target);
-      router.refresh();
-    } finally {
+
+      // Immediately probe GET /api/auth/session: if cookies work, navigate cleanly;
+      // if cross-origin iframe blocked the cookie, navigate with ?__dd_tok= handoff.
+      await verifyCookieOrNavigateWithToken({
+        targetPath: target,
+        demoToken: data.demoToken ?? null,
+        sessionUser: sessionObj,
+      });
+    } catch {
+      const msg = 'Network error while contacting /api/auth/session.';
+      setErrorMessage(msg);
+      pushToast({
+        title: 'Sign-In Error',
+        description: msg,
+        tone: 'critical',
+      });
       setSubmitting(false);
+      setLoadingRole(null);
     }
   };
 
+  const handleDemoAccountSignIn = (role: SessionRole) => {
+    void establishServerSession({
+      mode: 'demo',
+      role,
+    });
+  };
+
+  const handleSignOutCurrentSession = async () => {
+    setSubmitting(true);
+    setErrorMessage(null);
+    clearClientIframeSessionStorage();
+    setActiveSession(null);
+    setActiveDemoToken(null);
+    setSignedInRole(null);
+    await performCleanSignOut('/auth');
+  };
+
   const handleSendOtp = () => {
+    setErrorMessage(null);
     if (!E164_INDIA_REGEX.test(fullPhone)) {
+      const msg = 'Enter a valid 10-digit Indian mobile number (+91 followed by 10 digits starting 6–9).';
+      setErrorMessage(msg);
       pushToast({
-        title: 'Enter a valid 10-digit Indian mobile number',
-        description: 'Format: +91 followed by 10 digits.',
+        title: 'Invalid Indian Mobile Number',
+        description: msg,
         tone: 'warning',
       });
       return;
     }
     setOtpSent(true);
+    if (otp.length < 6) setOtp('123456');
     setResendSec(30);
     pushToast({
       title: 'OTP Dispatched (+91)',
-      description: `Enter any 6 digits to sign in with preview OTP for ${fullPhone}`,
+      description: `Demo OTP 123456 ready for ${fullPhone}`,
       tone: 'info',
     });
   };
 
   const handleVerifyOtp = () => {
-    if (otp.length < 6) {
-      pushToast({ title: 'Enter all 6 OTP digits', tone: 'warning' });
+    setErrorMessage(null);
+    if (!/^\d{6}$/.test(otp.trim())) {
+      const msg = 'Enter all 6 digits of your SMS verification code (e.g. 123456).';
+      setErrorMessage(msg);
+      pushToast({ title: 'Enter 6-digit OTP', description: msg, tone: 'warning' });
       return;
     }
     if (!demoEnabled) {
+      const msg = 'Demo OTP fallback is disabled in this environment.';
+      setErrorMessage(msg);
       pushToast({
         title: 'Firebase Phone OTP Required',
-        description: 'Demo OTP fallback is disabled in this environment.',
+        description: msg,
         tone: 'warning',
       });
       return;
     }
+
+    const cleanDigits = phoneDigits.replace(/\D/g, '');
+    const matchedRole: SessionRole =
+      cleanDigits === '9862099900'
+        ? 'admin'
+        : cleanDigits === '9862055501'
+        ? 'installer'
+        : cleanDigits === '9862022282'
+        ? 'family_member'
+        : 'customer';
+
     void establishServerSession({
-      demoRole: 'customer',
+      mode: 'demo',
+      role: matchedRole,
       phone: fullPhone,
-      name: `Customer (${fullPhone.slice(-4)})`,
+      name:
+        matchedRole === 'customer'
+          ? `Thangboi Haokip (${fullPhone.slice(-4)})`
+          : undefined,
     });
   };
 
   const handleEmailSignIn = async () => {
-    if (!email.includes('@') || password.length < 6) {
-      pushToast({ title: 'Enter valid email and password (6+ chars)', tone: 'warning' });
+    setErrorMessage(null);
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail.includes('@') || password.length < 6) {
+      const msg = 'Enter a valid email address and a password with at least 6 characters.';
+      setErrorMessage(msg);
+      pushToast({
+        title: 'Invalid Email or Password',
+        description: msg,
+        tone: 'warning',
+      });
       return;
     }
+
+    const lower = trimmedEmail.toLowerCase();
+    const inferredRole: SessionRole =
+      lower.includes('admin') || lower === 'thangboiahi@gmail.com'
+        ? 'admin'
+        : lower.includes('installer') || lower.includes('tech')
+        ? 'installer'
+        : lower.includes('family') || lower.includes('member')
+        ? 'family_member'
+        : 'customer';
+
+    // When demo auth is active, sign in directly against /api/auth/session without stalling
+    // on unconfigured Firebase client credentials.
+    if (demoEnabled) {
+      await establishServerSession({
+        mode: 'demo',
+        role: inferredRole,
+        email: trimmedEmail,
+      });
+      return;
+    }
+
     try {
-      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(auth, trimmedEmail, password);
       const idToken = await cred.user.getIdToken();
-      await establishServerSession({ idToken });
+      await establishServerSession({ idToken, mode: 'firebase' });
     } catch {
-      if (demoEnabled) {
-        const lower = email.toLowerCase();
-        const role: SessionRole = lower.includes('admin') || lower === 'thangboiahi@gmail.com'
-          ? 'admin'
-          : lower.includes('installer')
-          ? 'installer'
-          : lower.includes('family')
-          ? 'family_member'
-          : 'customer';
-        await establishServerSession({ demoRole: role, email: email.trim() });
-      } else {
-        pushToast({
-          title: 'Email Sign-In Rejected',
-          description: 'Verify your Firebase Email/Password credentials.',
-          tone: 'critical',
-        });
-      }
+      const msg = 'Verify your Firebase Email/Password credentials.';
+      setErrorMessage(msg);
+      pushToast({
+        title: 'Email Sign-In Rejected',
+        description: msg,
+        tone: 'critical',
+      });
     }
   };
 
   const handleGoogleSignIn = async () => {
+    setErrorMessage(null);
+    if (demoEnabled) {
+      await establishServerSession({
+        mode: 'demo',
+        role: 'customer',
+      });
+      return;
+    }
     try {
       const provider = new GoogleAuthProvider();
       const cred = await signInWithPopup(auth, provider);
       const idToken = await cred.user.getIdToken();
-      await establishServerSession({ idToken });
+      await establishServerSession({ idToken, mode: 'firebase' });
     } catch {
-      if (demoEnabled) {
-        await establishServerSession({ demoRole: 'customer' });
-      } else {
-        pushToast({
-          title: 'Google Sign-In Cancelled or Blocked',
-          tone: 'warning',
-        });
-      }
+      const msg = 'Google Sign-In was cancelled or blocked by popup policy.';
+      setErrorMessage(msg);
+      pushToast({
+        title: 'Google Sign-In Blocked',
+        description: msg,
+        tone: 'warning',
+      });
     }
   };
 
   return (
     <div className="max-w-md mx-auto my-6 sm:my-10 px-3 space-y-4">
       <div className="text-center space-y-1.5 flex flex-col items-center">
-        <DDoodleLogo size="md" animated={true} />
+        <DDoodleLogo size="lg" variant={submitting || loadingRole !== null ? "loading" : "idle"} animated={true} />
         <h1 className="text-lg font-bold tracking-tight text-foreground">
           My Console — DD oodle Sign In
         </h1>
@@ -253,13 +396,105 @@ function AuthWorkspace() {
               Role: {activeSession.role.toUpperCase()} ({activeSession.mode})
             </div>
           </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => router.push(getPortalPathForRole(activeSession.role))}
-          >
-            Continue →
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={submitting}
+              onClick={() => {
+                const target = nextParam
+                  ? resolveSafeRedirect(nextParam, activeSession.role)
+                  : getPortalPathForRole(activeSession.role);
+                void verifyCookieOrNavigateWithToken({
+                  targetPath: appendIframeSessionTokenIfNeeded(target, activeDemoToken),
+                  demoToken: activeDemoToken,
+                  sessionUser: activeSession,
+                });
+              }}
+            >
+              Continue →
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={submitting}
+              onClick={() => void handleSignOutCurrentSession()}
+              title="Sign Out"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div
+          role="alert"
+          className="rounded-xl border border-danger/60 bg-danger-soft/80 px-3.5 py-2.5 flex items-start gap-2 text-xs text-danger"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="flex-1 leading-snug">{errorMessage}</div>
+        </div>
+      )}
+
+      {/* Preview / Demo Account 1-Tap Sign-In Card */}
+      {demoEnabled && (
+        <div className="rounded-2xl border border-accent-border bg-surface p-4 space-y-2.5 text-xs shadow-lg">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-foreground">
+              Instant Demo Accounts (1-Tap Sign In)
+            </span>
+            <Badge variant="warning">DEMO READY</Badge>
+          </div>
+          <p className="text-[11px] text-foreground-muted leading-snug">
+            Tap any role below to issue a signed HttpOnly session cookie and jump directly into its portal.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={submitting}
+              onClick={() => handleDemoAccountSignIn('customer')}
+            >
+              <UserCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span className="truncate">
+                {loadingRole === 'customer' ? 'Signing In...' : 'Customer Owner'}
+              </span>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={submitting}
+              onClick={() => handleDemoAccountSignIn('family_member')}
+            >
+              <Users className="h-3.5 w-3.5 text-tertiary shrink-0" />
+              <span className="truncate">
+                {loadingRole === 'family_member' ? 'Signing In...' : 'Family Member'}
+              </span>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={submitting}
+              onClick={() => handleDemoAccountSignIn('installer')}
+            >
+              <Wrench className="h-3.5 w-3.5 text-warning shrink-0" />
+              <span className="truncate">
+                {loadingRole === 'installer' ? 'Signing In...' : 'Field Installer'}
+              </span>
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={submitting}
+              onClick={() => handleDemoAccountSignIn('admin')}
+            >
+              <Shield className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {loadingRole === 'admin' ? 'Signing In...' : 'Master Admin'}
+              </span>
+            </Button>
+          </div>
         </div>
       )}
 
@@ -267,7 +502,7 @@ function AuthWorkspace() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
             <KeyRound className="h-3.5 w-3.5 text-primary" />
-            <span>Authentication</span>
+            <span>Phone OTP or Email Sign-In</span>
           </div>
           <Badge variant="mono">IST · +91</Badge>
         </div>
@@ -276,7 +511,10 @@ function AuthWorkspace() {
           fullWidth
           ariaLabel="Sign-in method"
           value={mode}
-          onChange={setMode}
+          onChange={(next) => {
+            setErrorMessage(null);
+            setMode(next);
+          }}
           options={[
             { value: 'phone', label: 'Phone OTP (+91)', icon: <Phone className="h-3.5 w-3.5" /> },
             { value: 'email', label: 'Email / Google', icon: <Mail className="h-3.5 w-3.5" /> },
@@ -290,7 +528,7 @@ function AuthWorkspace() {
               Signed In as {signedInRole.replace('_', ' ').toUpperCase()}
             </div>
             <div className="text-foreground-secondary">
-              Opening {getPortalPathForRole(signedInRole)}...
+              Opening {redirectTarget || getPortalPathForRole(signedInRole)}...
             </div>
           </div>
         ) : mode === 'phone' ? (
@@ -307,7 +545,7 @@ function AuthWorkspace() {
                   maxLength={10}
                   value={phoneDigits}
                   onChange={(e) => setPhoneDigits(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  placeholder="98620 00000"
+                  placeholder="98620 11114"
                   className="flex-1 h-10 bg-transparent px-3 font-mono text-xs text-foreground tabular-nums focus:outline-none"
                 />
               </div>
@@ -317,7 +555,7 @@ function AuthWorkspace() {
               <div className="space-y-2">
                 <OtpPinInput
                   length={6}
-                  label="Enter 6-Digit SMS OTP"
+                  label="Enter 6-Digit SMS OTP (Demo OTP: 123456)"
                   value={otp}
                   onChange={setOtp}
                 />
@@ -343,7 +581,13 @@ function AuthWorkspace() {
               disabled={submitting}
               onClick={otpSent ? handleVerifyOtp : handleSendOtp}
             >
-              <span>{otpSent ? 'Verify OTP & Enter Console' : 'Send 6-Digit OTP'}</span>
+              <span>
+                {submitting
+                  ? 'Verifying Session...'
+                  : otpSent
+                  ? 'Verify OTP & Enter Console'
+                  : 'Send 6-Digit OTP'}
+              </span>
             </Button>
           </div>
         ) : (
@@ -354,7 +598,7 @@ function AuthWorkspace() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="owner@ddoodle.in"
+                placeholder="owner@ddoodle.in (or admin@ddoodle.in)"
                 className="w-full h-10 rounded-xl border border-border bg-surface-elevated px-3 text-xs text-foreground focus:outline-none focus:border-accent"
               />
             </label>
@@ -368,6 +612,12 @@ function AuthWorkspace() {
                 className="w-full h-10 rounded-xl border border-border bg-surface-elevated px-3 text-xs text-foreground focus:outline-none focus:border-accent"
               />
             </label>
+            <div className="text-[11px] font-mono text-foreground-muted">
+              Tip: Use <span className="text-accent">owner@ddoodle.in</span>,{' '}
+              <span className="text-accent">family@ddoodle.in</span>,{' '}
+              <span className="text-accent">installer@ddoodle.in</span>, or{' '}
+              <span className="text-accent">admin@ddoodle.in</span>
+            </div>
             <Button
               variant="primary"
               className="w-full"
@@ -375,7 +625,7 @@ function AuthWorkspace() {
               disabled={submitting}
               onClick={() => void handleEmailSignIn()}
             >
-              <span>Sign In with Email</span>
+              <span>{submitting ? 'Signing In...' : 'Sign In with Email'}</span>
             </Button>
             <Button
               variant="secondary"
@@ -394,60 +644,6 @@ function AuthWorkspace() {
           <span>Offline Port 80 LAN &amp; Web Bluetooth stay accessible via your G7 8-digit PIN.</span>
         </div>
       </div>
-
-      {/* Preview / Non-Production Role Switcher (Strict Production Gate) */}
-      {demoEnabled && (
-        <div className="rounded-2xl border border-border bg-surface/80 p-4 space-y-2.5 text-xs">
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-semibold text-foreground">
-              Preview Mode · Instant Role Switcher
-            </span>
-            <Badge variant="warning">DEMO ONLY</Badge>
-          </div>
-          <p className="text-[11px] text-foreground-muted leading-snug">
-            Active when Firebase Admin credentials are unconfigured so you can verify strict
-            server-side route isolation across all 4 roles.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={submitting}
-              onClick={() => void establishServerSession({ demoRole: 'customer' })}
-            >
-              <UserCheck className="h-3.5 w-3.5 text-primary" />
-              <span>Customer → /console</span>
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={submitting}
-              onClick={() => void establishServerSession({ demoRole: 'family_member' })}
-            >
-              <Users className="h-3.5 w-3.5 text-tertiary" />
-              <span>Family → /console</span>
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={submitting}
-              onClick={() => void establishServerSession({ demoRole: 'installer' })}
-            >
-              <Wrench className="h-3.5 w-3.5 text-warning" />
-              <span>Installer → /installer</span>
-            </Button>
-            <Button
-              variant="accent"
-              size="sm"
-              disabled={submitting}
-              onClick={() => void establishServerSession({ demoRole: 'admin' })}
-            >
-              <Shield className="h-3.5 w-3.5" />
-              <span>Admin → /admin</span>
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -45,6 +45,7 @@ import {
   SmartLockCapabilityRenderer,
   VideoStreamCapabilityRenderer,
 } from './Phase23CapabilityRenderers';
+import { useUnifiedWorkspace } from '@/lib/data/unifiedStore';
 
 export interface DynamicCapabilityCardProps {
   device: VirtualDeviceInstance;
@@ -78,6 +79,11 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
   onOpenLocalAccess,
   onInspect,
 }) => {
+  const { erp } = useUnifiedWorkspace();
+  const activationState = erp.deviceStates[device.device_id]?.activation ?? 'ACTIVE';
+  const isQuarantined = activationState === 'QUARANTINED';
+  const isUnclaimed = activationState === 'UNCLAIMED';
+
   const cardTitle = displayName?.trim() || device.name;
   const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
   const [ackedKeys, setAckedKeys] = useState<Record<string, boolean>>({});
@@ -168,7 +174,9 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
         'rounded-2xl border bg-surface p-3 sm:p-3.5 transition-colors space-y-2.5',
         hasLatchedFault
           ? 'border-danger/70 ring-1 ring-danger/25'
-          : 'hairline-border hover:border-border-strong'
+          : isQuarantined
+            ? 'border-warning/70 ring-1 ring-warning/20'
+            : 'hairline-border hover:border-border-strong'
       )}
     >
       {/* Header Row */}
@@ -187,6 +195,16 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
             {device.state.via === 'ble_proxy' && (
               <Badge variant="warning" className="text-[10px]">
                 BLE Proxy
+              </Badge>
+            )}
+            {isQuarantined && (
+              <Badge variant="danger" className="text-[10px]">
+                QUARANTINED
+              </Badge>
+            )}
+            {isUnclaimed && (
+              <Badge variant="warning" className="text-[10px]">
+                UNCLAIMED
               </Badge>
             )}
           </div>
@@ -222,6 +240,17 @@ export const DynamicCapabilityCard: React.FC<DynamicCapabilityCardProps> = ({
           </a>
         </div>
       </div>
+
+      {/* Admin Quarantine / Unclaimed Notice (Tier 1 Manual Failsafe Always Active) */}
+      {(isQuarantined || isUnclaimed) && (
+        <div className="rounded-xl border border-warning/40 bg-warning-muted/60 px-2.5 py-1.5 text-[11px] text-warning flex items-center justify-between gap-2">
+          <span>
+            {isQuarantined
+              ? 'Cloud MQTT quarantined by Admin — Tier 1 physical rocker & local LAN/BLE fail-safe remain active.'
+              : 'Device unclaimed in ERP batch — complete commissioning in Setup or Installer portal.'}
+          </span>
+        </div>
+      )}
 
       {/* G10: Global Latched Fault Lock Banner (NO remote clear button) */}
       <LatchedFaultBanner fault={device.state.fault} moduleCode={device.module_code} />

@@ -37,6 +37,7 @@ export function AdminQuotesTab({
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | QuoteStatus>('ALL');
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('UPI');
+  const [targetHomeId, setTargetHomeId] = useState<string>('home_imphal_001');
   const installers = accounts.filter(
     (a) => (a.role === 'installer' || a.role === 'admin') && a.status === 'ACTIVE'
   );
@@ -56,18 +57,24 @@ export function AdminQuotesTab({
 
   const handleConvert = async (quote: QuoteRecord) => {
     const inst = installers.find((i) => i.uid === assigneeUid) ?? installers[0];
+    const resolvedTargetHome =
+      targetHomeId === 'NEW_HOME'
+        ? `home_${quote.city.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 10)}_${Date.now().toString().slice(-3)}`
+        : targetHomeId;
+
     const res = await convertQuoteToOrderAndJob(
       quote,
       {
         installerUid: inst?.uid || 'uid_installer_manipur_01',
         installerName: inst?.name || 'Bikramjit Singh (Field Tech)',
         paymentMode,
+        targetHomeId: resolvedTargetHome,
       },
       actor
     );
     pushToast({
-      title: `Converted ${quote.quote_ref} -> Order & Installer Job`,
-      description: `Income + BOM COGS logged in Finance Ledger · Job assigned for ${res.homeId}`,
+      title: `Converted ${quote.quote_ref} -> Sale & Installer Job (${res.jobId})`,
+      description: `Income + BOM COGS logged in P&L · Subscription & DFY 3D synced to ${res.homeId}`,
       tone: 'success',
     });
   };
@@ -82,6 +89,18 @@ export function AdminQuotesTab({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="w-52">
+              <ThemedSelect
+                ariaLabel="Target Customer Home for Conversion"
+                value={targetHomeId}
+                onChange={setTargetHomeId}
+                options={[
+                  { value: 'home_imphal_001', label: 'Home → Lamka Smart Residence' },
+                  { value: 'home_guwahati_002', label: 'Home → Imphal Duplex' },
+                  { value: 'NEW_HOME', label: 'Home → Create New Home ID' },
+                ]}
+              />
+            </div>
             <div className="w-48">
               <ThemedSelect
                 ariaLabel="Default installer for conversion"
@@ -221,7 +240,7 @@ export function AdminQuotesTab({
                     onClick={() => void handleConvert(q)}
                   >
                     <ArrowRightCircle className="h-3.5 w-3.5" />
-                    <span>1-Tap Convert Quote to Order &amp; Job</span>
+                    <span>Convert to Sale &amp; Assign Installer</span>
                   </Button>
                 )}
               </div>

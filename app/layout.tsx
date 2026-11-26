@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { ThemeEngineProvider } from '@/components/theme/ThemeEngineProvider';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { RouteTransitionLoader } from '@/components/navigation/RouteTransitionLoader';
 
 export const viewport: Viewport = {
   themeColor: '#090b0f',
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body suppressHydrationWarning>
         <ThemeEngineProvider>
+          <RouteTransitionLoader />
           <ToastProvider>{children}</ToastProvider>
         </ThemeEngineProvider>
       </body>

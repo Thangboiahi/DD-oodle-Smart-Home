@@ -203,10 +203,9 @@ function ShopWorkspace() {
         syncedCloud: res.syncedCloud,
       });
 
-      window.open(res.whatsappUrl, '_blank', 'noopener,noreferrer');
       pushToast({
-        title: `Quote ${quote_ref} Saved`,
-        description: 'Launching prefilled WhatsApp quote summary.',
+        title: `Quote ${quote_ref} Recorded in Admin CRM`,
+        description: 'Ready in /admin Quotes tab · Click Open WhatsApp below to message sales.',
         tone: 'success',
       });
     } finally {

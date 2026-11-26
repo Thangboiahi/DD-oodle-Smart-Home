@@ -8,9 +8,16 @@ import { FailSafeHeroSimulator } from '@/components/public/FailSafeHeroSimulator
 import { FlagshipModuleSandboxes } from '@/components/public/FlagshipModuleSandboxes';
 import { TwinTeaserSection } from '@/components/public/TwinTeaserSection';
 import { EcosystemExplorer } from '@/components/public/EcosystemExplorer';
+import { useLiveStoreCatalog } from '@/lib/catalog/storeSync';
 import { Badge, Button } from '@/components/ui';
 
 export default function PublicLandingPage() {
+  const { modules, storeConfig } = useLiveStoreCatalog();
+  const startingModuleInr = modules.reduce(
+    (min, m) => (m.retailInr > 0 && m.retailInr < min ? m.retailInr : min),
+    modules[0]?.retailInr ?? 1499
+  );
+
   return (
     <div className="pb-12">
       {/* 1. Hero & Interactive 4-Tier Fail-Safe Simulator */}
@@ -34,19 +41,31 @@ export default function PublicLandingPage() {
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className="rounded-3xl border border-primary-border bg-gradient-to-br from-surface via-surface to-primary-soft/40 p-6 sm:p-10 space-y-6 shadow-xl"
         >
-          <div className="max-w-2xl space-y-3">
-            <Badge variant="success">
-              <ShieldCheck className="h-3 w-3" />
-              <span>ZERO SUBSCRIPTION LOCK-IN GUARANTEE</span>
-            </Badge>
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-              Get Yours (Be Smart) — Engineered for Indian Homes
-            </h2>
-            <p className="text-xs sm:text-sm text-foreground-secondary leading-relaxed">
-              Every module drops behind existing Anchor, Legrand, Schneider, or Roma plates without
-              breaking plaster—paired with local installer commissioning and our lifetime Core
-              offline control floor.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-2xl space-y-2.5">
+              <div className="text-xs font-mono text-success tracking-tight">
+                04. Zero Subscription Lock-In Guarantee · Core Free Forever
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                Get Yours (Be Smart) — Engineered for Indian Homes
+              </h2>
+              <p className="text-xs sm:text-sm text-foreground-secondary leading-relaxed">
+                Every module drops behind existing Anchor, Legrand, Schneider, or Roma plates without
+                breaking plaster—paired with local installer commissioning and our lifetime Core
+                offline control floor.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-surface/90 px-4 py-3 font-mono text-xs tabular-nums space-y-1 shrink-0">
+              <div className="text-[10px] text-foreground-muted">LIVE STOREFRONT STARTING AT</div>
+              <div className="text-xl font-bold text-primary">
+                ₹{startingModuleInr.toLocaleString('en-IN')}{' '}
+                <span className="text-xs font-normal text-foreground-secondary">/ module</span>
+              </div>
+              <div className="text-[11px] text-foreground-secondary">
+                Core ₹0/yr · Plus ₹{storeConfig.tierPrices.plus.toLocaleString('en-IN')}/yr ({storeConfig.plusTrialDays}d Free Trial)
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
@@ -64,7 +83,7 @@ export default function PublicLandingPage() {
               {
                 icon: <Wrench className="h-4 w-4 text-accent" />,
                 title: 'Local Technician Setup',
-                desc: 'Optional field commissioning + ₹999 on-site Done-For-You 3D Home Twin mapping.',
+                desc: `Optional field commissioning + ₹${storeConfig.dfy3dPriceInr.toLocaleString('en-IN')} on-site Done-For-You 3D Home Twin mapping.`,
               },
               {
                 icon: <ShieldCheck className="h-4 w-4 text-success" />,
@@ -86,12 +105,12 @@ export default function PublicLandingPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-border/60">
-            <div className="text-xs font-mono text-foreground-muted">
-              Instant WhatsApp quote with itemized MRP, installation &amp; optional subscription.
+            <div className="text-xs font-mono text-foreground-muted tabular-nums">
+              Instant WhatsApp quote (+{storeConfig.whatsappSalesNumber}) with itemized MRP, installation &amp; optional subscription.
             </div>
             <Link href="/shop">
               <Button variant="primary" touchTarget className="px-6 text-sm font-semibold">
-                <span>Get Yours (Be Smart)</span>
+                <span>Configure &amp; Get Quote</span>
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
@@ -101,3 +120,4 @@ export default function PublicLandingPage() {
     </div>
   );
 }
+

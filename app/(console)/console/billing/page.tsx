@@ -12,26 +12,24 @@ import {
 } from 'lucide-react';
 import { SubscriptionTier } from '@/lib/protocol/contract';
 import {
-  DFY_3D_TWIN_ADDON_INR,
   TIER_CATALOG,
   resolveEntitlements,
 } from '@/lib/entitlements/resolver';
+import { useLiveStoreCatalog } from '@/lib/catalog/storeSync';
+import { useUnifiedFinance, useUnifiedHome } from '@/lib/data/unifiedStore';
 import {
   Badge,
   Banner,
   Button,
   Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   SegmentedControl,
   TactileSwitch,
   useToast,
 } from '@/components/ui';
-import { CollapsibleSection } from '@/components/workspace';
+import { CollapsibleSection, useWorkspace } from '@/components/workspace';
 import { cn } from '@/lib/utils';
 
-type PlanPreviewScenario = 'trial' | 'expired_core' | 'plus' | 'shield' | 'all_in_family';
+type PlanPreviewScenario = 'live_sync' | 'trial' | 'expired_core' | 'plus' | 'shield' | 'all_in_family';
 
 const MATRIX_ROWS: Array<{
   feature: string;
@@ -101,11 +99,16 @@ const MATRIX_ROWS: Array<{
 
 export default function BillingPage() {
   const { pushToast } = useToast();
+  const { prefs } = useWorkspace();
+  const { storeConfig } = useLiveStoreCatalog();
+  const { subscription, entitlements: liveEntitlements } = useUnifiedHome(prefs.activeHomeId);
+  const { updateSubscriptionPlan, setHomeDfy3dPurchased } = useUnifiedFinance();
 
-  const [scenario, setScenario] = useState<PlanPreviewScenario>('trial');
+  const [scenario, setScenario] = useState<PlanPreviewScenario>('live_sync');
   const [billingCycle, setBillingCycle] = useState<'annual' | 'monthly'>('annual');
-  const [selectedPlan, setSelectedPlan] = useState<SubscriptionTier>('plus');
-  const [dfyPurchased, setDfyPurchased] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionTier>(
+    subscription?.tier && subscription.tier !== 'core' ? subscription.tier : 'plus'
+  );
   const [upiId, setUpiId] = useState('family@okaxis');
   const [upiModalOpen, setUpiModalOpen] = useState(false);
 
@@ -116,8 +119,13 @@ export default function BillingPage() {
   });
 
   const [nowRef] = useState(() => Date.now());
+  const dfyPurchased = subscription?.dfy3dPurchased ?? true;
+  const dfyPriceInr = storeConfig.dfy3dPriceInr;
 
   const entitlements = useMemo(() => {
+    if (scenario === 'live_sync') {
+      return liveEntitlements;
+    }
     const dayMs = 24 * 60 * 60 * 1000;
     if (scenario === 'trial') {
       return resolveEntitlements({
@@ -144,18 +152,36 @@ export default function BillingPage() {
       expires_at: nowRef + 320 * dayMs,
       dfy_3d_purchased: dfyPurchased,
     });
-  }, [scenario, dfyPurchased, nowRef]);
+  }, [scenario, liveEntitlements, dfyPurchased, nowRef]);
 
   const activeTierMeta = TIER_CATALOG[selectedPlan];
+  const liveAnnualPrice = storeConfig.tierPrices[selectedPlan] ?? activeTierMeta.annualInr;
   const payableInr =
-    billingCycle === 'annual' ? activeTierMeta.annualInr : activeTierMeta.monthlyInr;
+    billingCycle === 'annual' ? liveAnnualPrice : activeTierMeta.monthlyInr;
 
-  const generateUpiLink = () => {
+  const generateUpiLink = async () => {
     const upiUrl = `upi://pay?pa=ddoodle.billing@icici&pn=DD%20oodle%20Smart%20Home&am=${payableInr}&cu=INR&tn=${selectedPlan.toUpperCase()}_${billingCycle.toUpperCase()}`;
+    await updateSubscriptionPlan(
+      prefs.activeHomeId,
+      {
+        tier: selectedPlan,
+        status: 'active',
+        trialStatus:
+          billingCycle === 'annual' ? 'Annual Active (+365d)' : 'Monthly Active (+30d)',
+        paymentMode: 'UPI',
+        upiStatus: 'PAID',
+        logRenewalInr: payableInr,
+      },
+      {
+        uid: 'demo_owner_01',
+        email: 'owner@ddoodle.in',
+      }
+    );
+    setScenario('live_sync');
     setUpiModalOpen(false);
     pushToast({
-      title: `UPI Payment Dispatched (₹${payableInr.toLocaleString('en-IN')})`,
-      description: `VPA ${upiId} · ${upiUrl.slice(0, 56)}...`,
+      title: `UPI Renewal Activated (${activeTierMeta.displayName} · ₹${payableInr.toLocaleString('en-IN')})`,
+      description: `Synced to Admin Subscriptions & P&L Ledger · VPA ${upiId} · ${upiUrl.slice(0, 44)}...`,
       tone: 'success',
     });
   };
@@ -173,14 +199,14 @@ export default function BillingPage() {
               <Badge variant="accent">
                 ACTIVE: {entitlements.effectiveTier.toUpperCase()}
               </Badge>
-              {entitlements.isTrialActive && (
-                <Badge variant="success">
-                  {entitlements.trialDaysRemaining}d Trial Left
+              {subscription && (
+                <Badge variant={subscription.status === 'cancelled' ? 'warning' : 'success'}>
+                  {subscription.trialStatus}
                 </Badge>
               )}
             </div>
             <p className="text-[11px] font-mono text-foreground-muted">
-              homes/home_imphal_001/subscription · Zero Cloud Lock-In
+              homes/{prefs.activeHomeId}/subscription · Zero Cloud Lock-In
             </p>
           </div>
         </div>
@@ -191,6 +217,7 @@ export default function BillingPage() {
           value={scenario}
           onChange={setScenario}
           options={[
+            { value: 'live_sync', label: 'Live Home Plan' },
             { value: 'trial', label: '90d Trial' },
             { value: 'expired_core', label: 'Expired→Core' },
             { value: 'plus', label: 'Plus' },
@@ -200,11 +227,11 @@ export default function BillingPage() {
         />
       </div>
 
-      {/* Graceful Downgrade Notice when testing Expired -> Core */}
-      {entitlements.degradedToCore && (
+      {/* Graceful Downgrade Notice when testing Expired -> Core or when Admin downgrades home */}
+      {(entitlements.degradedToCore || subscription?.status === 'cancelled') && (
         <Banner
           tone="warning"
-          title="Plan Expired — Gracefully Degraded to Core (Free Forever)"
+          title="Plan Deactivated / Expired — Gracefully Degraded to Core (Free Forever)"
           description="All 4-Tier Fail-Safe controls, 2D Room Grid, up to 5 local schedules, 24h logs, standard FCM push, and hardware safety cutoffs remain 100% unlocked."
         />
       )}
@@ -254,22 +281,26 @@ export default function BillingPage() {
           <Badge variant={dfyPurchased ? 'success' : 'accent'}>
             <Sparkles className="h-3 w-3" />
             <span>
-              DFY 3D Twin: ₹{DFY_3D_TWIN_ADDON_INR} One-Time ({dfyPurchased ? 'OWNED' : 'ADD-ON'})
+              DFY 3D Twin: ₹{dfyPriceInr} One-Time ({dfyPurchased ? 'OWNED' : 'ADD-ON'})
             </span>
           </Badge>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => {
-              setDfyPurchased((p) => !p);
+              const nextVal = !dfyPurchased;
+              void setHomeDfy3dPurchased(prefs.activeHomeId, nextVal, {
+                uid: 'demo_owner_01',
+                email: 'owner@ddoodle.in',
+              });
               pushToast({
-                title: dfyPurchased ? 'DFY 3D Add-On Removed (Preview)' : 'DFY 3D Home Twin Added',
-                description: `One-time ₹${DFY_3D_TWIN_ADDON_INR} custom floorplan scan`,
+                title: nextVal ? 'DFY 3D Home Twin Activated' : 'DFY 3D Add-On Disabled',
+                description: `One-time ₹${dfyPriceInr} custom floorplan scan synced with Admin`,
                 tone: 'info',
               });
             }}
           >
-            {dfyPurchased ? 'Owned' : `+ Add ₹${DFY_3D_TWIN_ADDON_INR}`}
+            {dfyPurchased ? 'Owned' : `+ Add ₹${dfyPriceInr}`}
           </Button>
         </div>
       </div>

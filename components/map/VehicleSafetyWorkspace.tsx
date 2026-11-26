@@ -62,48 +62,19 @@ import {
   getHomeFallbackCoords,
   haversineDistanceMeters,
 } from '@/lib/map/vehicleRouting';
+import {
+  CANONICAL_VEHICLE_GEOFENCES,
+  CANONICAL_VEHICLE_TRIPS,
+  type CanonicalVehicleTrip,
+} from '@/lib/data/canonicalSeed';
+import { useUnifiedFleet } from '@/lib/data/unifiedStore';
 import { cn } from '@/lib/utils';
 
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
-interface TripRecord {
-  trip_id: string;
-  label: string;
-  date: string;
-  distanceKm: number;
-  durationMin: number;
-  maxSpeedKmh: number;
-  waypoints: Array<{ label: string; lat: number; lng: number }>;
-}
+type TripRecord = CanonicalVehicleTrip;
 
-const DEMO_TRIPS: TripRecord[] = [
-  {
-    trip_id: 'trip_2026_1122_01',
-    label: 'Imphal Residence → Kangla Fort',
-    date: 'Today · 09:15 IST',
-    distanceKm: 6.4,
-    durationMin: 18,
-    maxSpeedKmh: 48,
-    waypoints: [
-      { label: 'Start · Lamphelpat', lat: 24.817, lng: 93.9368 },
-      { label: 'Mid · Thangal Bazar', lat: 24.8112, lng: 93.9395 },
-      { label: 'End · Kangla Gate', lat: 24.8074, lng: 93.9442 },
-    ],
-  },
-  {
-    trip_id: 'trip_2026_1121_02',
-    label: 'Airport Road → Imphal Residence',
-    date: 'Yesterday · 18:40 IST',
-    distanceKm: 9.8,
-    durationMin: 26,
-    maxSpeedKmh: 56,
-    waypoints: [
-      { label: 'Start · Tulihal Airport', lat: 24.7601, lng: 93.8967 },
-      { label: 'Mid · Keishampat', lat: 24.7985, lng: 93.9312 },
-      { label: 'End · Imphal Residence', lat: 24.817, lng: 93.9368 },
-    ],
-  },
-];
+const DEMO_TRIPS: TripRecord[] = CANONICAL_VEHICLE_TRIPS;
 
 type SheetDetent = 'peek' | 'half' | 'full';
 type MapStyleOverride = 'auto' | 'dark' | 'light';
@@ -120,6 +91,10 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   onSelectVehicle,
 }) => {
   const { snapshot, prefs, resolvedLightMode, activePalette, activeHome } = useWorkspace();
+  const {
+    vehicleGeofences: geofences,
+    setVehicleGeofences: setGeofences,
+  } = useUnifiedFleet();
   const { pushToast } = useToast();
 
   const vehicles = useMemo(
@@ -196,30 +171,6 @@ export const VehicleSafetyWorkspace: React.FC<VehicleSafetyWorkspaceProps> = ({
   const [pin, setPin] = useState('');
   const [tripProgressPct, setTripProgressPct] = useState(100);
   const [selectedTripId, setSelectedTripId] = useState(DEMO_TRIPS[0].trip_id);
-
-  // Geofences synced directly with MapLibre GeoJSON layer
-  const [geofences, setGeofences] = useState<VehicleGeofence[]>([
-    {
-      id: 'geo_home',
-      name: 'Imphal Residence',
-      enabled: true,
-      lat: 24.817,
-      lng: 93.9368,
-      radius_m: 350,
-      trigger: 'both',
-      cross_category_action: 'inverter_saver',
-    },
-    {
-      id: 'geo_office',
-      name: 'City Center',
-      enabled: true,
-      lat: 24.821,
-      lng: 93.942,
-      radius_m: 500,
-      trigger: 'on_enter',
-      cross_category_action: 'none',
-    },
-  ]);
   const [newGeoName, setNewGeoName] = useState('');
   const [newGeoRadius, setNewGeoRadius] = useState(300);
 

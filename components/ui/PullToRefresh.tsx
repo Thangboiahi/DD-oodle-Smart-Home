@@ -69,8 +69,12 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({
           style={{ height: refreshing ? 52 : pullDist }}
           className="flex items-center justify-center gap-2 overflow-hidden transition-[height] duration-150 text-[11px] font-mono text-foreground-muted"
         >
-          <div className={refreshing ? 'animate-spin' : ''}>
-            <DDoodleLogo size="sm" animated={false} />
+          <div>
+            <DDoodleLogo
+              size="sm"
+              variant={refreshing ? 'loading' : 'idle'}
+              animated={refreshing}
+            />
           </div>
           <span>
             {refreshing

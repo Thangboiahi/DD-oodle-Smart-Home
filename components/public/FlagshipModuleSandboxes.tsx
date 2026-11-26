@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import {
   AlertTriangle,
+  ArrowUpRight,
   Car,
   CheckCircle2,
   Droplets,
@@ -20,6 +23,7 @@ import {
   evaluateStarterInterlockSafety,
   SAFETY_CONSTANTS,
 } from '@/lib/protocol/contract';
+import { useLiveStoreCatalog } from '@/lib/catalog/storeSync';
 import {
   Badge,
   Button,
@@ -29,7 +33,57 @@ import {
 } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
+const MiniVeh01Map = dynamic(() => import('./MiniVeh01Map'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-44 sm:h-48 rounded-xl border border-slate-800 bg-slate-950/90 flex items-center justify-center text-[11px] font-mono text-slate-400">
+      Loading MapLibre GL JS (Churachandpur / Imphal)...
+    </div>
+  ),
+});
+
 export const FlagshipModuleSandboxes: React.FC = () => {
+  const { modules } = useLiveStoreCatalog();
+  const catalogByCode = useMemo(() => {
+    const map: Record<string, (typeof modules)[number]> = {};
+    for (const m of modules) {
+      map[m.module_code] = m;
+    }
+    return map;
+  }, [modules]);
+
+  const renderModuleFooter = (code: string, physicalSpec: string) => {
+    const mod = catalogByCode[code];
+    return (
+      <div className="pt-2.5 border-t border-border/60 flex items-center justify-between gap-2 text-[11px]">
+        <div className="font-mono text-foreground-muted tabular-nums truncate">
+          <span>{physicalSpec}</span>
+          {mod && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className="font-semibold text-foreground">
+                ₹{mod.retailInr.toLocaleString('en-IN')}
+              </span>
+              {mod.installInr > 0 && (
+                <span className="text-foreground-muted">
+                  {' '}
+                  (+₹{mod.installInr} install)
+                </span>
+              )}
+            </>
+          )}
+        </div>
+        <Link
+          href={`/shop?highlight=${code}`}
+          className="inline-flex items-center gap-1 font-medium text-primary hover:underline shrink-0"
+        >
+          <span>Shop {code}</span>
+          <ArrowUpRight className="h-3 w-3" />
+        </Link>
+      </div>
+    );
+  };
+
   // 1. PWR-01: 4-Gang Switchboard + manual wall switch override
   const [pwr01, setPwr01] = useState({
     ch1: true,
@@ -159,9 +213,8 @@ export const FlagshipModuleSandboxes: React.FC = () => {
     <section id="live-demos" className="py-12 px-3 sm:px-6 max-w-6xl mx-auto space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Badge variant="accent">PHASE 1 FLAGSHIP 6 · HANDS-ON SANDBOXES</Badge>
-            <Badge variant="mono">LIVE v1.4 LOGIC</Badge>
+          <div className="text-xs font-mono text-primary tracking-tight">
+            01. Phase 1 Flagship 6 · Interactive Hardware Sandboxes · Live v1.4 State Machines
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
             Test Every Phase 1 Hardware Module Live
@@ -169,7 +222,7 @@ export const FlagshipModuleSandboxes: React.FC = () => {
           <p className="text-xs sm:text-sm text-foreground-secondary max-w-2xl">
             Every interactive widget below runs the exact Protocol Contract v1.4 state machines:
             G10 physical 3s latch recovery, WAT-01 dry-run protection, G15b vehicle speed interlock,
-            and HUB-01 0ms offline rules.
+            and HUB-01 0ms offline rules—with live pricing synced directly from Admin.
           </p>
         </div>
       </div>
@@ -178,14 +231,12 @@ export const FlagshipModuleSandboxes: React.FC = () => {
         {/* 1. PWR-01: 4-Gang Switchboard */}
         <article className="rounded-2xl border border-border bg-surface p-4 flex flex-col justify-between space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Badge variant="accent">PWR-01</Badge>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+              <span className="font-bold text-primary">PWR-01 · CORE-A</span>
               {pwr01Override ? (
-                <Badge variant="warning">wall_switch OVERRIDE</Badge>
+                <span className="text-warning font-semibold">wall_switch OVERRIDE</span>
               ) : (
-                <Badge variant="success" dot>
-                  SYNCED
-                </Badge>
+                <span className="text-success font-semibold">SYNCED · 230V AC</span>
               )}
             </div>
             <h3 className="text-sm font-semibold text-foreground">
@@ -236,28 +287,29 @@ export const FlagshipModuleSandboxes: React.FC = () => {
             ))}
           </div>
 
-          <Button
-            variant="secondary"
-            size="sm"
-            className="w-full"
-            onClick={() => {
-              setPwr01Override(true);
-              setPwr01((prev) => ({ ...prev, ch1: !prev.ch1 }));
-            }}
-          >
-            <ToggleRight className="h-3.5 w-3.5 text-warning" />
-            <span>Flip Physical Wall Switch (Ch1)</span>
-          </Button>
+          <div className="space-y-2.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              onClick={() => {
+                setPwr01Override(true);
+                setPwr01((prev) => ({ ...prev, ch1: !prev.ch1 }));
+              }}
+            >
+              <ToggleRight className="h-3.5 w-3.5 text-warning" />
+              <span>Flip Physical Wall Switch (Ch1)</span>
+            </Button>
+            {renderModuleFooter('PWR-01', '4M/6M Gang Box')}
+          </div>
         </article>
 
         {/* 2. PWR-02: Hum-Free Stepped Fan Regulator */}
         <article className="rounded-2xl border border-border bg-surface p-4 flex flex-col justify-between space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Badge variant="accent">PWR-02</Badge>
-              <Badge variant="mono" className="tabular-nums">
-                {fanWatts} W · 0 HUM
-              </Badge>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums">
+              <span className="font-bold text-primary">PWR-02 · CORE-A</span>
+              <span className="text-foreground-secondary">{fanWatts} W · 0 HUM</span>
             </div>
             <h3 className="text-sm font-semibold text-foreground">
               Hum-Free Stepped Fan Regulator (0–4)
@@ -294,12 +346,12 @@ export const FlagshipModuleSandboxes: React.FC = () => {
                 {fanSpeed === 0 ? 'OFF' : `Step ${fanSpeed} / 4`}
               </div>
               <div className="text-[11px] text-success">
-                {fanSpeed === 0 ? 'Motor Idle' : '2-Cap Sine Switching'}
+                {fanSpeed === 0 ? 'Motor Idle' : `${fanSpeed * 75} RPM · 2-Cap Sine`}
               </div>
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <SegmentedControl<string>
               fullWidth
               size="sm"
@@ -319,6 +371,7 @@ export const FlagshipModuleSandboxes: React.FC = () => {
               checked={fanLight}
               onChange={setFanLight}
             />
+            {renderModuleFooter('PWR-02', '2M/4M Gang Box')}
           </div>
 
           <style>{`
@@ -336,14 +389,12 @@ export const FlagshipModuleSandboxes: React.FC = () => {
         {/* 3. PWR-03: 16A Meter + G10 Overload Latch + 3s Physical Hold */}
         <article className="rounded-2xl border border-border bg-surface p-4 flex flex-col justify-between space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Badge variant="accent">PWR-03</Badge>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+              <span className="font-bold text-primary">PWR-03 · CORE-B</span>
               {pwr03Fault ? (
-                <Badge variant="danger">G10 LOCKED: {pwr03Fault}</Badge>
+                <span className="text-danger font-bold">G10 LOCKED: {pwr03Fault}</span>
               ) : (
-                <Badge variant="success" dot>
-                  45m CEILING LOCKED
-                </Badge>
+                <span className="text-success font-semibold">45m CEILING LOCKED</span>
               )}
             </div>
             <h3 className="text-sm font-semibold text-foreground">
@@ -410,32 +461,33 @@ export const FlagshipModuleSandboxes: React.FC = () => {
             />
           )}
 
-          <Button
-            variant="danger"
-            size="sm"
-            className="w-full"
-            disabled={Boolean(pwr03Fault)}
-            onClick={() => {
-              setPwr03On(false);
-              setPwr03Fault('OVERLOAD');
-            }}
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            <span>Trigger Overload (22.4A &gt; 16A)</span>
-          </Button>
+          <div className="space-y-2.5">
+            <Button
+              variant="danger"
+              size="sm"
+              className="w-full"
+              disabled={Boolean(pwr03Fault)}
+              onClick={() => {
+                setPwr03On(false);
+                setPwr03Fault('OVERLOAD');
+              }}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span>Trigger Overload (22.4A &gt; 16A)</span>
+            </Button>
+            {renderModuleFooter('PWR-03', '16A Heavy 2M/4M')}
+          </div>
         </article>
 
         {/* 4. WAT-01: Overhead Water Tank & Dry-Run Protection */}
         <article className="rounded-2xl border border-border bg-surface p-4 flex flex-col justify-between space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Badge variant="accent">WAT-01</Badge>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+              <span className="font-bold text-primary">WAT-01 · CORE-A+C</span>
               {watFault ? (
-                <Badge variant="danger">{watFault}</Badge>
+                <span className="text-danger font-bold">{watFault}</span>
               ) : (
-                <Badge variant="success" dot>
-                  30s DRY-RUN ARM
-                </Badge>
+                <span className="text-success font-semibold">30s DRY-RUN ARM</span>
               )}
             </div>
             <h3 className="text-sm font-semibold text-foreground">
@@ -453,7 +505,7 @@ export const FlagshipModuleSandboxes: React.FC = () => {
                 className="absolute bottom-0 inset-x-0 bg-primary/70 transition-[height] duration-700"
                 style={{ height: `${tankLevel}%` }}
               />
-              <div className="relative z-10 h-full flex flex-col items-center justify-center font-mono text-xs font-bold text-foreground drop-shadow">
+              <div className="relative z-10 h-full flex flex-col items-center justify-center font-mono text-xs font-bold text-foreground drop-shadow tabular-nums">
                 {Math.round(tankLevel)}%
               </div>
             </div>
@@ -512,46 +564,56 @@ export const FlagshipModuleSandboxes: React.FC = () => {
             />
           )}
 
-          <Button
-            variant="danger"
-            size="sm"
-            className="w-full"
-            disabled={Boolean(watFault)}
-            onClick={() => {
-              setFlowLpm(0);
-              setPumpOn(false);
-              setWatFault('DRY_RUN_FAULT');
-            }}
-          >
-            <Droplets className="h-3.5 w-3.5" />
-            <span>Test Dry-Run Cutoff (0 L/min · 30s)</span>
-          </Button>
+          <div className="space-y-2.5">
+            <Button
+              variant="danger"
+              size="sm"
+              className="w-full"
+              disabled={Boolean(watFault)}
+              onClick={() => {
+                setFlowLpm(0);
+                setPumpOn(false);
+                setWatFault('DRY_RUN_FAULT');
+              }}
+            >
+              <Droplets className="h-3.5 w-3.5" />
+              <span>Test Dry-Run Cutoff (0 L/min · 30s)</span>
+            </Button>
+            {renderModuleFooter('WAT-01', 'IP65 Tank + Starter')}
+          </div>
         </article>
 
-        {/* 5. VEH-01: 6.4G Crash SOS + Starter Solenoid Safety Interlock */}
-        <article className="rounded-2xl border border-border bg-surface p-4 flex flex-col justify-between space-y-3.5">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Badge variant="accent">VEH-01</Badge>
-              <Badge
-                variant={
+        {/* 5. VEH-01: Real MapLibre GL JS GPS + 6.4G Crash SOS + Starter Solenoid Safety Interlock */}
+        <article className="rounded-2xl border border-border bg-surface p-4 flex flex-col justify-between space-y-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+              <span className="font-bold text-primary">VEH-01 · CORE-E</span>
+              <span
+                className={cn(
+                  'font-semibold',
                   effectiveImmobilizeState === 'ENGAGED'
-                    ? 'danger'
+                    ? 'text-danger'
                     : effectiveImmobilizeState === 'PENDING'
-                    ? 'warning'
-                    : 'success'
-                }
+                    ? 'text-warning'
+                    : 'text-success'
+                )}
               >
                 STARTER: {effectiveImmobilizeState}
-              </Badge>
+              </span>
             </div>
             <h3 className="text-sm font-semibold text-foreground">
-              4G Crash SOS &amp; Moving Safety Interlock
+              Live 4G GPS Map, 6.4G Crash SOS &amp; Starter Interlock
             </h3>
             <p className="text-[11px] text-foreground-secondary">
-              Starter cut NEVER trips above 5 km/h or ignition ON (stays PENDING until safely parked).
+              Real MapLibre GL JS + OpenFreeMap vector tiles (Churachandpur / Imphal). Starter cut stays PENDING above 5 km/h.
             </p>
           </div>
+
+          <MiniVeh01Map
+            speedKmh={vehIgnition ? vehSpeed : 0}
+            immobilizeState={effectiveImmobilizeState}
+            crashActive={crashSecLeft !== null}
+          />
 
           {crashSecLeft !== null ? (
             <div className="rounded-xl border border-danger bg-danger-soft/80 p-3 space-y-2 text-xs">
@@ -583,7 +645,7 @@ export const FlagshipModuleSandboxes: React.FC = () => {
               </Button>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-mono tabular-nums">
                   <span className="text-foreground-muted">VEHICLE SPEED</span>
@@ -607,45 +669,48 @@ export const FlagshipModuleSandboxes: React.FC = () => {
                 onChange={setVehIgnition}
               />
 
-              <div className="rounded-lg border border-border bg-surface-elevated px-2.5 py-2 text-[11px] text-foreground-secondary leading-snug">
+              <div className="rounded-lg border border-border bg-surface-elevated px-2.5 py-1.5 text-[11px] text-foreground-secondary leading-snug">
                 {immobilizeRequested
                   ? interlockEval.reason
-                  : 'Tap Starter Lock below at 42 km/h, then slow to 0 km/h & turn Ignition OFF.'}
+                  : 'Tap Starter Lock at 42 km/h (PENDING), then drop speed to 0 km/h & turn Ignition OFF (ENGAGED).'}
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant={immobilizeRequested ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => setImmobilizeRequested((v) => !v)}
-            >
-              <Car className="h-3.5 w-3.5" />
-              <span>{immobilizeRequested ? 'Release Cut' : 'Starter Lock'}</span>
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => {
-                setCrashEscalated(false);
-                setCrashSecLeft(SAFETY_CONSTANTS.CRASH_SOS_CANCEL_WINDOW_SEC);
-              }}
-            >
-              <ShieldAlert className="h-3.5 w-3.5" />
-              <span>6.4G Crash</span>
-            </Button>
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant={immobilizeRequested ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setImmobilizeRequested((v) => !v)}
+              >
+                <Car className="h-3.5 w-3.5" />
+                <span>{immobilizeRequested ? 'Release Cut' : 'Starter Lock'}</span>
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setCrashEscalated(false);
+                  setCrashSecLeft(SAFETY_CONSTANTS.CRASH_SOS_CANCEL_WINDOW_SEC);
+                }}
+              >
+                <ShieldAlert className="h-3.5 w-3.5" />
+                <span>Simulate 6.4G Crash</span>
+              </Button>
+            </div>
+            {renderModuleFooter('VEH-01', '12V–72V IP65 Harness')}
           </div>
         </article>
 
         {/* 6. HUB-01: Local Broker & Cut Broadband Continuity */}
         <article className="rounded-2xl border border-border bg-surface p-4 flex flex-col justify-between space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Badge variant="accent">HUB-01</Badge>
-              <Badge variant={hubBroadbandCut ? 'warning' : 'success'} dot>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+              <span className="font-bold text-primary">HUB-01 · CORE-D</span>
+              <span className={cn('font-semibold', hubBroadbandCut ? 'text-warning' : 'text-success')}>
                 {hubBroadbandCut ? 'OFFLINE EDGE ACTIVE' : 'CLOUD + LOCAL SYNC'}
-              </Badge>
+              </span>
             </div>
             <h3 className="text-sm font-semibold text-foreground">
               Local Hub · 0ms Internet-Cut Rules
@@ -682,19 +747,22 @@ export const FlagshipModuleSandboxes: React.FC = () => {
             }}
           />
 
-          <Button
-            variant="secondary"
-            size="sm"
-            className="w-full"
-            onClick={() => setHubRulePulseCount((c) => c + 1)}
-          >
-            {hubBroadbandCut ? (
-              <WifiOff className="h-3.5 w-3.5 text-warning" />
-            ) : (
-              <Router className="h-3.5 w-3.5 text-primary" />
-            )}
-            <span>Fire Local Rule (WAT-01 → Pump Cut)</span>
-          </Button>
+          <div className="space-y-2.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              onClick={() => setHubRulePulseCount((c) => c + 1)}
+            >
+              {hubBroadbandCut ? (
+                <WifiOff className="h-3.5 w-3.5 text-warning" />
+              ) : (
+                <Router className="h-3.5 w-3.5 text-primary" />
+              )}
+              <span>Fire Local Rule (WAT-01 → Pump Cut)</span>
+            </Button>
+            {renderModuleFooter('HUB-01', 'DIN / Tabletop Edge')}
+          </div>
         </article>
       </div>
     </section>
